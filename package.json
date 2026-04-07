@@ -28,7 +28,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "build": "tsc --noEmit",
+    "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
