@@ -1,6 +1,6 @@
 # kto — Knowledge to Obsidian
 
-AI-powered codebase analysis and Obsidian knowledge sync for Claude Code.
+AI-powered codebase analysis and Obsidian knowledge sync for Claude Code and OpenCode.
 
 ## Installation
 
@@ -8,15 +8,37 @@ AI-powered codebase analysis and Obsidian knowledge sync for Claude Code.
 npm install -g kto-cc
 ```
 
+For Claude Code only (default):
+```bash
+node bin/install.js
+```
+
+For OpenCode:
+```bash
+node bin/install.js --opencode
+```
+
+For both:
+```bash
+node bin/install.js --both
+```
+
 ## Quick Start
 
-Open any project in Claude Code and run:
-
+**Claude Code:**
 ```
 /kto:init      — Configure vault path and project ID
 /kto:analyze   — Full scan → graph → Obsidian sync
 /kto:diff      — Incremental update after code changes
 /kto:sync      — Re-sync vault from existing knowledge
+```
+
+**OpenCode:**
+```
+/kto-init      — Configure vault path and project ID
+/kto-analyze   — Full scan → graph → Obsidian sync
+/kto-diff      — Incremental update after code changes
+/kto-sync      — Re-sync vault from existing knowledge
 ```
 
 ## Configuration

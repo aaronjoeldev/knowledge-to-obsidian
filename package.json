@@ -1,7 +1,7 @@
 {
   "name": "kto-cc",
   "version": "0.1.0",
-  "description": "Knowledge to Obsidian — AI-powered codebase knowledge sync for Claude Code",
+  "description": "Knowledge to Obsidian — AI-powered codebase knowledge sync for Claude Code and OpenCode",
   "type": "module",
   "bin": {
     "kto-cc": "bin/install.js"
