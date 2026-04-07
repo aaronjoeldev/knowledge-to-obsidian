@@ -1,0 +1,42 @@
+{
+  "name": "kto-cc",
+  "version": "0.1.0",
+  "description": "Knowledge to Obsidian — AI-powered codebase knowledge sync for Claude Code",
+  "type": "module",
+  "bin": {
+    "kto-cc": "bin/install.js"
+  },
+  "files": [
+    "bin",
+    "agents",
+    "commands",
+    "src"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "obsidian",
+    "knowledge-base",
+    "codebase-analysis"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.2"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.90"
+  }
+}
