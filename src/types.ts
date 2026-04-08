@@ -28,6 +28,7 @@ export interface KnowledgeFeature {
   modules: string[]; // References MODULE-* ids
   third_parties: string[]; // References THIRD-* ids
   security_impact: Criticality;
+  how_it_works?: string;
 }
 
 export interface KnowledgeModule {
@@ -47,6 +48,8 @@ export interface KnowledgeThirdParty {
   data_access: string[]; // e.g. ['billing', 'pii']
   criticality: Criticality;
   used_in: string[]; // FEAT-* ids
+  description?: string;
+  usage_in_project?: string;
 }
 
 export interface KnowledgeTechnology {
@@ -62,12 +65,15 @@ export interface KnowledgeSecurityThreat {
   affected_modules: string[];
   severity: Criticality;
   mitigation: string;
+  evidence?: string;
 }
 
 export interface KnowledgeSecurity {
   threats: KnowledgeSecurityThreat[];
   pii_flows: string[];
   auth_model: string;
+  auth_flow?: string;
+  authorization_model?: string;
 }
 
 export interface KnowledgeRelation {
