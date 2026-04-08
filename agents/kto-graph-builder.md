@@ -120,7 +120,7 @@ Run AFTER detect_security and BEFORE build_relations.
 **A — Enrich each feature**
 
 For each feature in the detected features list:
-1. Identify 1–2 entry_point files. If entry_points is empty, pick the most central file from the feature's module list.
+1. Identify up to 3 entry_point files. If entry_points is empty, pick the most central files from the feature's module list (the ones imported by the most sibling files).
 2. Read those files with the Read tool.
 3. From the file content, write:
    - `description`: One precise sentence (≤25 words) naming what user-facing capability this feature provides. No "unknown". No generic phrases like "handles logic".
@@ -140,6 +140,11 @@ For each third party:
 3. Write:
    - `description`: One sentence explaining what the npm package does in general (draw on your training knowledge of the package). E.g. for `@supabase/ssr`: "Supabase SSR adapter that provides cookie-based session management for server-rendered Next.js routes."
    - `usage_in_project`: 1–3 sentences describing how this specific project uses the package. Cite actual function names, config keys, or patterns visible in the files.
+
+Quality bar example for `@supabase/ssr`:
+- GOOD description: "Supabase SSR adapter that manages cookie-based auth sessions in server-rendered Next.js routes."
+- GOOD usage_in_project: "Used in `middleware.ts` via `createServerClient()` to refresh the user session on every request. Also used in Server Components to query user-specific data with RLS-protected Supabase calls."
+
    - `data_access`: Replace any `['unknown']` value with a concrete list of data categories the package touches (e.g. `['session_cookies', 'user_auth_tokens', 'email']`).
 
 **C — Enrich security**
