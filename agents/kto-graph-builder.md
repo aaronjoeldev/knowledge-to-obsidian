@@ -113,6 +113,54 @@ Identify security-relevant patterns:
 - Information Disclosure → modules exposing PII in API responses
 </step>
 
+<step name="read_and_enrich">
+This step reads actual source file content to replace name-pattern guesses with real understanding.
+Run AFTER detect_security and BEFORE build_relations.
+
+**A — Enrich each feature**
+
+For each feature in the detected features list:
+1. Identify 1–2 entry_point files. If entry_points is empty, pick the most central file from the feature's module list.
+2. Read those files with the Read tool.
+3. From the file content, write:
+   - `description`: One precise sentence (≤25 words) naming what user-facing capability this feature provides. No "unknown". No generic phrases like "handles logic".
+   - `how_it_works`: 2–4 sentences explaining the technical mechanism: what triggers the feature, what the code path does step by step, and what it returns/produces. Cite real function names, middleware, or data transformations visible in the file.
+
+Quality bar:
+- BAD description: "Handles user authentication logic."
+- GOOD description: "Allows users to sign in with email/password or OAuth via Supabase, issuing a session cookie on success."
+- BAD how_it_works: "The auth module handles login."
+- GOOD how_it_works: "The login route renders a form that calls `supabase.auth.signInWithPassword()` on submit. The auth callback at `app/api/auth/callback/route.ts` exchanges the authorization code for a session via `supabase.auth.exchangeCodeForSession()`, sets a `Set-Cookie` header, and redirects to the dashboard. Session refresh is handled server-side via `@supabase/ssr` middleware on every request."
+
+**B — Enrich each third party**
+
+For each third party:
+1. Find 1–2 files that import this package (from the imports data).
+2. Read those files with the Read tool.
+3. Write:
+   - `description`: One sentence explaining what the npm package does in general (draw on your training knowledge of the package). E.g. for `@supabase/ssr`: "Supabase SSR adapter that provides cookie-based session management for server-rendered Next.js routes."
+   - `usage_in_project`: 1–3 sentences describing how this specific project uses the package. Cite actual function names, config keys, or patterns visible in the files.
+   - `data_access`: Replace any `['unknown']` value with a concrete list of data categories the package touches (e.g. `['session_cookies', 'user_auth_tokens', 'email']`).
+
+**C — Enrich security**
+
+1. Find auth-related files: `middleware.ts`, files under `auth/` or `api/auth/`, files importing supabase.auth, jwt, passport, or next-auth.
+2. Read up to 3 of those files with the Read tool.
+3. Write on the `security` object:
+   - `auth_flow`: 3–5 sentences describing the actual authentication sequence from the code. Describe how a request arrives, what middleware intercepts it, how the token/session is verified, success/failure paths, and which cookie/header carries the session. Cite real function names.
+   - `authorization_model`: 1–2 sentences describing how access control decisions are made (role checks, ownership checks, RLS, middleware guards). If Supabase Row Level Security is enabled, say so.
+4. For each existing threat, upgrade:
+   - `description`: Replace generic pattern-match text with a specific sentence citing code evidence. E.g.: "The `signInWithPassword` endpoint has no rate limiting, enabling credential stuffing."
+   - `evidence`: Quote the file path and specific code construct. E.g.: "`app/api/auth/callback/route.ts` — `code` parameter read from URL without PKCE state validation."
+   - `mitigation`: Concrete, actionable recommendation. E.g.: "Add `upstash/ratelimit` middleware on the login route. Validate OAuth state parameter against a server-side nonce before calling `exchangeCodeForSession`."
+
+**Limits:**
+- Read at most 3 files per feature, 2 files per third party, 3 files for security.
+- Skip binary files and files over 50 KB.
+- If a file cannot be read: write "Source file unavailable." and continue.
+- Do NOT hallucinate. If you cannot determine a value from code, write "Not determined from source." — never invent content.
+</step>
+
 <step name="build_relations">
 Create typed relations between all entities:
 
@@ -143,11 +191,18 @@ Pretty-print with 2-space indentation.
 - When uncertain about a feature boundary, lean toward fewer, larger features
 - Every relation must be grounded in import/export evidence
 - Maximum 50 features, 200 modules per project
+- read_and_enrich MUST read actual file content before writing description or how_it_works — never generate these fields from file names alone
+- New optional fields (how_it_works, description/usage_in_project on third parties, auth_flow, authorization_model, evidence on threats) MUST be populated when source code is readable
+- Never write "unknown" or leave description empty when source files are available to read
 </rules>
 
 <success_criteria>
 - [ ] `.kto/enriched_knowledge.json` written and valid JSON
 - [ ] All entities have stable, unique IDs
 - [ ] Relations reference only entities that exist in the graph
+- [ ] Every feature has a non-empty `description` and `how_it_works` (when entry_point files are readable)
+- [ ] Every third party has a non-empty `description` and `usage_in_project`
+- [ ] `security.auth_flow` and `security.authorization_model` are populated (when auth files are readable)
+- [ ] All threats have non-generic `description`, populated `evidence`, and actionable `mitigation`
 - [ ] Return: feature count, module count, third-party count
 </success_criteria>
