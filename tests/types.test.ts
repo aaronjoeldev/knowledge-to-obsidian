@@ -6,6 +6,7 @@ import type {
   KnowledgeThirdParty,
   KnowledgeTechnology,
   KnowledgeSecurity,
+  KnowledgeSecurityThreat,
   KnowledgeRelation,
   KnowledgeGraph,
   EnrichedKnowledgeGraph,
@@ -103,5 +104,73 @@ describe('Knowledge Model Types', () => {
       version: '1.0',
     };
     expect(graph.enriched_at).toBe('2026-04-07T00:00:00Z');
+  });
+
+  it('KnowledgeFeature accepts optional how_it_works field', () => {
+    const feature: KnowledgeFeature = {
+      id: 'FEAT-002',
+      name: 'Billing',
+      description: 'Handles subscription payments via Stripe.',
+      status: 'implemented',
+      entry_points: ['api/billing/checkout'],
+      modules: ['MODULE-Billing'],
+      third_parties: ['THIRD-Stripe'],
+      security_impact: 'high',
+      how_it_works: 'The checkout route creates a Stripe session and redirects the user.',
+    };
+    expect(feature.how_it_works).toBe('The checkout route creates a Stripe session and redirects the user.');
+  });
+
+  it('KnowledgeFeature is valid without how_it_works field', () => {
+    const feature: KnowledgeFeature = {
+      id: 'FEAT-003',
+      name: 'Search',
+      description: 'Full-text search across content.',
+      status: 'planned',
+      entry_points: [],
+      modules: [],
+      third_parties: [],
+      security_impact: 'low',
+    };
+    expect(feature.how_it_works).toBeUndefined();
+  });
+
+  it('KnowledgeThirdParty accepts optional description and usage_in_project', () => {
+    const tp: KnowledgeThirdParty = {
+      id: 'THIRD-Supabase',
+      name: 'Supabase',
+      type: 'auth',
+      data_access: ['session_cookies', 'user_auth_tokens'],
+      criticality: 'high',
+      used_in: ['FEAT-001'],
+      description: 'Open-source Firebase alternative with auth, database, and storage.',
+      usage_in_project: 'Used for email/password auth and session management via SSR cookies.',
+    };
+    expect(tp.description).toContain('Firebase');
+    expect(tp.usage_in_project).toContain('session');
+  });
+
+  it('KnowledgeSecurity accepts optional auth_flow and authorization_model', () => {
+    const security: KnowledgeSecurity = {
+      threats: [],
+      pii_flows: [],
+      auth_model: 'Custom',
+      auth_flow: 'Login route calls signInWithPassword, callback exchanges code for session.',
+      authorization_model: 'Row Level Security enforced at the Supabase database layer.',
+    };
+    expect(security.auth_flow).toContain('signInWithPassword');
+    expect(security.authorization_model).toContain('Row Level Security');
+  });
+
+  it('KnowledgeSecurityThreat accepts optional evidence field', () => {
+    const threat: KnowledgeSecurityThreat = {
+      id: 'THREAT-001',
+      description: 'Login endpoint has no rate limiting, enabling credential stuffing.',
+      affected_modules: ['MODULE-Auth'],
+      severity: 'high',
+      mitigation: 'Add upstash/ratelimit middleware on the login route.',
+      evidence: 'app/(auth)/login/page.tsx — no rate-limit call before supabase.auth.signInWithPassword()',
+    };
+    expect(threat.evidence).toContain('signInWithPassword');
   });
 });
