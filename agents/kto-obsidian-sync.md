@@ -129,6 +129,35 @@ generated_by: kto
 ```
 </step>
 
+<step name="write_technology_md">
+Write `Technology.md` — complete technology stack overview:
+
+```markdown
+---
+type: technology
+project: {project.id}
+generated_by: kto
+---
+
+# Technologie-Stack — {project.name}
+
+<!-- AUTO-GENERATED START -->
+## Architekturüberblick
+
+{Synthesize 3–5 sentences about the overall architecture from the technologies and third_parties lists. Describe: the runtime (Node/browser/edge), the primary framework and rendering strategy (SSR/SPA/API routes), the data persistence approach, and the authentication approach. Only use information present in the data — do not hallucinate.}
+
+## Technologie-Tabelle
+
+| Name | Version | Typ | Beschreibung |
+|------|---------|-----|-------------|
+{for each tp in third_parties[]:
+| **[[{tp.id}|{tp.name}]]** | `{tp.version or "—"}` | {tp.type} | {tp.description if present, else infer a short one-line description from the package name and type} |}
+
+*{third_parties.length} Bibliotheken · Last synced: {enriched_at}*
+<!-- AUTO-GENERATED END -->
+```
+</step>
+
 <step name="write_feature_notes">
 For each feature in `features[]`, write `Features/FEAT-XXX_{SlugName}.md`:
 
@@ -150,17 +179,34 @@ generated_by: kto
 **Status:** {feature.status}
 **Security Impact:** {feature.security_impact}
 
-## Entry Points
+## Was es macht
 
+{feature.description}
+
+## Wie es funktioniert
+
+{feature.how_it_works if present, else: "_Noch nicht analysiert — führe `/kto:analyze` erneut aus, um Quelldateien einzulesen._"}
+
+## Wie es eingesetzt wird
+
+**Entry Points:**
 {for each entry_point: - `{entry_point}`}
 
-## Implemented By
-
+**Implementiert durch:**
 {for each module id: - [[{module_id}]]}
 
-## Third Party Dependencies
-
+**Drittanbieter:**
 {for each third_party id: - [[{third_party_id}]]}
+
+## Sicherheitsaspekte
+
+**Security Impact:** {feature.security_impact}
+
+{Collect all threats from security.threats whose affected_modules overlap with feature.modules. For each:
+- **{threat.id}** — {threat.description}
+  - *Mitigation:* {threat.mitigation if non-empty, else "Keine dokumentiert."}
+If none: "_Keine bekannten Bedrohungen für dieses Feature._"
+}
 
 ## Relations
 
@@ -223,13 +269,36 @@ generated_by: kto
 # {tp.name}
 
 <!-- AUTO-GENERATED START -->
-**Type:** {tp.type}
-**Criticality:** {tp.criticality}
-**Data Access:** {tp.data_access.join(', ')}
+**Typ:** {tp.type}
+**Kritikalität:** {tp.criticality}
 
-## Used In Features
+## Zweck
 
-{for each feat_id: - [[{feat_id}]]}
+{tp.description if present, else: "_Keine Beschreibung verfügbar._"}
+
+## Verwendung im Projekt
+
+{tp.usage_in_project if present, else: "_Noch nicht analysiert — führe `/kto:analyze` erneut aus._"}
+
+## Datenzugriff
+
+{if tp.data_access is non-empty and not ['unknown']:
+  {for each item: - {item}}
+else:
+  "_Kein spezifischer Datenzugriff dokumentiert._"
+}
+
+## Sicherheitshinweise
+
+{Collect threats from security.threats where any of tp.used_in features have modules overlapping with threat.affected_modules. For each:
+- **{threat.id}** ({threat.severity}) — {threat.description}
+  - *Mitigation:* {threat.mitigation if non-empty, else "Keine dokumentiert."}
+If none: "_Keine bekannten Sicherheitsbedrohungen für diese Bibliothek._"
+}
+
+## Verwendet in Features
+
+{for each feat_id in tp.used_in: - [[{feat_id}]]}
 
 *Last synced: {enriched_at}*
 <!-- AUTO-GENERATED END -->
@@ -279,17 +348,55 @@ generated_by: kto
 # Security Overview — {project.name}
 
 <!-- AUTO-GENERATED START -->
-**Auth Model:** {security.auth_model}
+**Auth-Modell:** {security.auth_model}
 
-## PII Flows
+## Authentifizierungs-Flow
 
-{for each pii_flow: - {pii_flow}}
+{security.auth_flow if present, else: "_Noch nicht analysiert — führe `/kto:analyze` erneut aus, um Auth-Dateien einzulesen._"}
 
-## Threats
+## Autorisierungsmodell
 
-| ID | Description | Severity | Affected Modules |
-|----|-------------|----------|-----------------|
-{for each threat: | {threat.id} | {threat.description} | {threat.severity} | {threat.affected_modules.join(', ')} |}
+{security.authorization_model if present, else: "_Noch nicht analysiert._"}
+
+## Bedrohungsübersicht
+
+| ID | Beschreibung | Schweregrad | Mitigation |
+|----|-------------|-------------|------------|
+{for each threat: | {threat.id} | {threat.description} | {threat.severity} | {threat.mitigation or "—"} |}
+
+## Bedrohungsdetails
+
+{for each threat:
+### {threat.id} — {threat.description}
+
+**Schweregrad:** {threat.severity}
+**Betroffene Module:** {threat.affected_modules.map(m => `[[${m}]]`).join(', ')}
+
+**Evidenz:**
+{threat.evidence if present, else: "_Keine spezifische Codeevidenz dokumentiert._"}
+
+**Mitigation:**
+{threat.mitigation if non-empty, else: "_Keine Mitigation dokumentiert._"}
+
+---
+}
+
+## PII-Inventar
+
+{Group pii_flows by likely category:
+- Authentifizierung: modules with auth/session/login/password in name
+- Benutzerprofil: modules with profile/user/account in name
+- Zahlungsdaten: modules with billing/payment/invoice in name
+- Verifizierung: modules with verification/tax/document in name
+- Kommunikation: modules with email/notification/message in name
+- Sonstiges: everything else
+
+For each non-empty category:
+### {category}
+{for each pii_flow: - [[{pii_flow}]]}
+
+If pii_flows is empty: "_Keine PII-Flows identifiziert._"
+}
 
 *Last synced: {enriched_at}*
 <!-- AUTO-GENERATED END -->
@@ -308,9 +415,12 @@ generated_by: kto
 
 <success_criteria>
 - [ ] Facts.md written/updated
-- [ ] One file per feature, module, third party
+- [ ] Technology.md written/updated with Architekturüberblick section
+- [ ] One file per feature — each with Was es macht, Wie es funktioniert, Wie es eingesetzt wird, Sicherheitsaspekte sections
+- [ ] One file per third party — each with Zweck, Verwendung im Projekt, Datenzugriff, Sicherheitshinweise sections
+- [ ] One file per module
 - [ ] Index files written
-- [ ] Security overview written
+- [ ] Security_Overview.md written with Authentifizierungs-Flow, Autorisierungsmodell, Bedrohungsdetails, PII-Inventar sections
 - [ ] No user content outside AUTO-GENERATED blocks was modified
 - [ ] Return: files created, files updated, vault path
 </success_criteria>
