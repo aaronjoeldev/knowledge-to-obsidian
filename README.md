@@ -93,7 +93,7 @@ Der Installer fragt interaktiv:
   Install globally or into current project?
 
   1) Global (recommended — available in all projects)
-  2) Local  (current project only)
+  2) Local  (current project only: /your/project)
 
   Choice [1]:
 ```
@@ -651,7 +651,7 @@ Das sollte nicht passieren, da kto nur den AUTO-GENERATED-Block ersetzt. Falls d
 node --version  # Muss ≥ 18.0.0 sein
 ```
 
-Mit `nvm`: `nvm install 22 && nvm use 22`
+Mit `nvm`: `nvm install 18 && nvm use 18`
 
 ### OpenCode findet die Commands nicht
 
