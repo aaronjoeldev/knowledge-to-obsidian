@@ -144,7 +144,7 @@ generated_by: kto
 <!-- AUTO-GENERATED START -->
 ## Architekturüberblick
 
-{Synthesize 3–5 sentences about the overall architecture from the technologies and third_parties lists. Describe: the runtime (Node/browser/edge), the primary framework and rendering strategy (SSR/SPA/API routes), the data persistence approach, and the authentication approach. Only use information present in the data — do not hallucinate.}
+{Synthesize 3–5 sentences about the overall architecture from the technologies and third_parties lists. Describe: the runtime (Node/browser/edge), the primary framework and rendering strategy (SSR/SPA/API routes), the data persistence approach, and the authentication approach. Only use information present in the data — do not hallucinate. If the data is too sparse (fewer than 3 third_parties), write: "_Noch nicht genug Daten für einen Architekturüberblick — führe `/kto:analyze` erneut aus._"}
 
 ## Technologie-Tabelle
 
@@ -181,7 +181,7 @@ generated_by: kto
 
 ## Was es macht
 
-{feature.description}
+{feature.description if present and non-empty, else: "_Keine Beschreibung verfügbar._"}
 
 ## Wie es funktioniert
 
@@ -208,7 +208,7 @@ generated_by: kto
 If none: "_Keine bekannten Bedrohungen für dieses Feature._"
 }
 
-## Relations
+## Beziehungen
 
 {for each relation where from == feature.id or to == feature.id:
 - {from} --{type}--> {to}}
@@ -356,7 +356,7 @@ generated_by: kto
 
 ## Autorisierungsmodell
 
-{security.authorization_model if present, else: "_Noch nicht analysiert._"}
+{security.authorization_model if present, else: "_Noch nicht analysiert — führe `/kto:analyze` erneut aus._"}
 
 ## Bedrohungsübersicht
 
@@ -415,7 +415,7 @@ If pii_flows is empty: "_Keine PII-Flows identifiziert._"
 
 <success_criteria>
 - [ ] Facts.md written/updated
-- [ ] Technology.md written/updated with Architekturüberblick section
+- [ ] Technology.md written/updated with Architekturüberblick and Technologie-Tabelle sections
 - [ ] One file per feature — each with Was es macht, Wie es funktioniert, Wie es eingesetzt wird, Sicherheitsaspekte sections
 - [ ] One file per third party — each with Zweck, Verwendung im Projekt, Datenzugriff, Sicherheitshinweise sections
 - [ ] One file per module
