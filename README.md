@@ -33,7 +33,7 @@ kto analysiert ein Repository vollständig, erkennt Features, Module und Abhäng
 
 | Anforderung | Version | Hinweis |
 |-------------|---------|---------|
-| Node.js | ≥ 22.0.0 | Überprüfen mit `node --version` |
+| Node.js | ≥ 18.0.0 | Überprüfen mit `node --version` |
 | Claude Code **oder** OpenCode | aktuell | Mindestens eines der beiden |
 | Obsidian | beliebig | Vault muss lokal existieren |
 | Git | beliebig | Empfohlen für `/kto:diff` |
@@ -42,97 +42,100 @@ kto analysiert ein Repository vollständig, erkennt Features, Module und Abhäng
 
 ## Installation
 
-kto installiert sich in deine KI-Editor-Konfiguration und registriert dort Slash-Commands und Agenten-Definitionen.
+kto installiert sich in deine KI-Editor-Konfiguration und registriert Slash-Commands und Agenten-Definitionen. Der Installer ist interaktiv — er fragt nach Runtime und Installationsort.
 
-### Installation für Claude Code
-
-**Option A — aus npm (empfohlen, sobald veröffentlicht):**
+### Curl-Installer (empfohlen)
 
 ```bash
-npx kto-cc
+bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh)
 ```
 
-**Option B — aus dem Repository:**
+> **Hinweis:** `bash <(...)` statt `curl ... | bash` — so bleibt das Terminal interaktiv und die Prompts funktionieren.
+
+Mit Flags (überspringt die interaktiven Prompts):
 
 ```bash
-# Repository klonen
-git clone https://github.com/dein-username/kto.git
-cd kto
+# Claude Code, global
+bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh) --claude --global
 
-# Abhängigkeiten installieren
-npm install
+# OpenCode, global
+bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh) --opencode --global
 
-# Für Claude Code installieren (Standard)
-node bin/install.js
+# Beide Runtimes, global
+bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh) --both --global
 ```
 
-**Was passiert dabei:**
+---
 
-```
-Installing kto for Claude Code → /Users/dein-name/.claude/kto
-  ✓ agents/
-  ✓ commands/
-  ✓ ~/.claude/commands/kto/ (slash commands)
+### Manuell aus dem Repository
 
-kto installed successfully!
-
-Claude Code commands:
-  /kto:init    — Initialize kto for a project
-  /kto:analyze — Full pipeline: scan → graph → sync
-  /kto:sync    — Re-sync vault from existing knowledge
-  /kto:diff    — Incremental update for changed files
+```bash
+git clone https://github.com/aaronjoeldev/knowledge-to-obsidian.git
+cd knowledge-to-obsidian
+node bin/install.cjs
 ```
 
-**Installierte Dateien:**
+---
+
+### Installationsoptionen
+
+Der Installer fragt interaktiv:
+
+```
+  Which runtime(s) would you like to install for?
+
+  1) Claude Code  (~/.claude)
+  2) OpenCode     (~/.config/opencode)
+  3) Both
+
+  Choice [1]:
+
+  Install globally or into current project?
+
+  1) Global (recommended — available in all projects)
+  2) Local  (current project only)
+
+  Choice [1]:
+```
+
+**Verfügbare Flags:**
+
+| Flag | Beschreibung |
+|------|--------------|
+| `--claude` | Nur Claude Code |
+| `--opencode` | Nur OpenCode |
+| `--both` / `--all` | Beide Runtimes |
+| `--global` / `-g` | Global installieren |
+| `--local` / `-l` | Nur aktuelles Projekt |
+| `--uninstall` / `-u` | kto-Dateien entfernen |
+| `--help` / `-h` | Hilfe anzeigen |
+
+---
+
+### Installierte Dateien
+
+**Claude Code:**
 
 | Pfad | Inhalt |
 |------|--------|
 | `~/.claude/kto/agents/` | Die 4 Agenten-Definitionen |
 | `~/.claude/kto/commands/` | Die 4 Slash-Command-Definitionen |
-| `~/.claude/commands/kto/` | Symlink-Kopie für Claude Code Discovery |
+| `~/.claude/commands/kto/` | Kopie für Claude Code Discovery |
 
----
+**OpenCode:**
 
-### Installation für OpenCode
+| Pfad | Inhalt |
+|------|--------|
+| `~/.config/opencode/agents/` | Konvertierte Agenten-Definitionen |
+| `~/.config/opencode/commands/` | `kto-init.md`, `kto-analyze.md`, … |
 
-```bash
-node bin/install.js --opencode
-```
-
-**Was passiert dabei:**
-
-Die Command-Dateien werden automatisch für OpenCode konvertiert:
-- `name:` Feld entfernt (OpenCode nutzt den Dateinamen als Command-Namen)
-- `allowed-tools:` → `permission: { allow: [...] }`
-- `AskUserQuestion` → `question`
-- `/kto:init` → `/kto-init` (Doppelpunkt → Bindestrich)
-- Pfade: `~/.claude` → `~/.config/opencode`
-
-```
-Installing kto for OpenCode → /Users/dein-name/.config/opencode
-  ✓ agents/ (converted for OpenCode)
-  ✓ ~/.config/opencode/commands/ (kto-init.md, kto-analyze.md, ...)
-```
-
-**OpenCode Config-Verzeichnis:**
-
-kto respektiert die Standard-XDG-Pfade:
+kto respektiert Standard-XDG-Pfade für OpenCode:
 
 | Priorität | Pfad |
 |-----------|------|
 | 1. | `$OPENCODE_CONFIG_DIR` |
 | 2. | `$XDG_CONFIG_HOME/opencode` |
 | 3. | `~/.config/opencode` (Standard) |
-
----
-
-### Beide gleichzeitig
-
-```bash
-node bin/install.js --both
-# oder
-node bin/install.js --all
-```
 
 ---
 
@@ -554,8 +557,8 @@ if (!result.valid) {
 ### Repository aufsetzen
 
 ```bash
-git clone https://github.com/dein-username/kto.git
-cd kto
+git clone https://github.com/aaronjoeldev/knowledge-to-obsidian.git
+cd knowledge-to-obsidian
 npm install
 ```
 
@@ -606,7 +609,7 @@ kto/
 │
 ├── tests/                          # Tests (Vitest)
 ├── bin/
-│   └── install.js                  # Installations-Script
+│   └── install.cjs                 # Installations-Script
 │
 ├── package.json
 ├── tsconfig.json
@@ -645,7 +648,7 @@ Das sollte nicht passieren, da kto nur den AUTO-GENERATED-Block ersetzt. Falls d
 ### Node.js-Version zu alt
 
 ```bash
-node --version  # Muss ≥ 22.0.0 sein
+node --version  # Muss ≥ 18.0.0 sein
 ```
 
 Mit `nvm`: `nvm install 22 && nvm use 22`
@@ -657,7 +660,7 @@ Prüfe den Config-Pfad:
 ls ~/.config/opencode/commands/ | grep kto
 ```
 
-Falls leer: `node bin/install.js --opencode` erneut ausführen.
+Falls leer: `node bin/install.cjs --opencode` erneut ausführen.
 
 ---
 
