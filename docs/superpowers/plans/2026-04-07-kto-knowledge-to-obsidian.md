@@ -1,6 +1,5 @@
 # kto — Knowledge to Obsidian: Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build `kto` — a Claude Code plugin that analyzes any codebase and writes a structured, auto-updating knowledge base into an Obsidian vault.
 
