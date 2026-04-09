@@ -16,7 +16,30 @@ export {
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { loadConfig } from './config.js';
+import { loadConfig, type KtoAgentsConfig, type KtoConfig } from './config.js';
+
+type AgentConfigKey = keyof KtoAgentsConfig;
+
+const AGENT_CONFIG_KEY_BY_NAME = {
+  'kto-project-mapper': 'project_mapper',
+  'kto-graph-builder': 'graph_builder',
+  'kto-obsidian-sync': 'obsidian_sync',
+  'kto-change-detector': 'change_detector',
+} as const satisfies Record<string, AgentConfigKey>;
+
+type AgentName = keyof typeof AGENT_CONFIG_KEY_BY_NAME;
+type ModelOverrideKey = AgentName | AgentConfigKey;
+
+interface ResolvedAgentRunContext {
+  name: AgentName;
+  configKey: AgentConfigKey;
+  model: string;
+}
+
+interface ResolvedPaths {
+  outputDir: string;
+  enrichedKnowledgePath: string;
+}
 
 // ─── KtoRunner ────────────────────────────────────────────────────────────────
 
@@ -24,7 +47,7 @@ export interface KtoRunnerOptions {
   /** Absolute path to the project to analyze. */
   projectDir: string;
   /** Override model for a specific agent. Takes precedence over config. */
-  modelOverrides?: Partial<Record<string, string>>;
+  modelOverrides?: Partial<Record<ModelOverrideKey, string>>;
 }
 
 export interface KtoPipelineResult {
@@ -41,7 +64,7 @@ export interface KtoPipelineResult {
  */
 export class KtoRunner {
   private readonly projectDir: string;
-  private readonly modelOverrides: Partial<Record<string, string>>;
+  private readonly modelOverrides: Partial<Record<ModelOverrideKey, string>>;
 
   constructor(options: KtoRunnerOptions) {
     this.projectDir = options.projectDir;
@@ -52,34 +75,34 @@ export class KtoRunner {
   async analyze(): Promise<KtoPipelineResult> {
     const config = await loadConfig(this.projectDir, { requireVault: true });
 
-    await this.runAgent('kto-project-mapper', config.agents.project_mapper, {
+    await this.runAgent(config, 'kto-project-mapper', {
       task: 'scan repository and produce knowledge.json',
       cwd: this.projectDir,
     });
 
-    await this.runAgent('kto-graph-builder', config.agents.graph_builder, {
+    await this.runAgent(config, 'kto-graph-builder', {
       task: 'build knowledge graph from knowledge.json',
       cwd: this.projectDir,
     });
 
-    await this.runAgent('kto-obsidian-sync', config.agents.obsidian_sync, {
+    await this.runAgent(config, 'kto-obsidian-sync', {
       task: 'sync enriched knowledge graph to obsidian vault',
       cwd: this.projectDir,
     });
 
-    return this.buildResult();
+    return this.buildResult(config);
   }
 
   /** Run only the Obsidian sync phase from existing enriched_knowledge.json. */
   async sync(): Promise<KtoPipelineResult> {
     const config = await loadConfig(this.projectDir, { requireVault: true });
 
-    await this.runAgent('kto-obsidian-sync', config.agents.obsidian_sync, {
+    await this.runAgent(config, 'kto-obsidian-sync', {
       task: 'sync enriched knowledge graph to obsidian vault',
       cwd: this.projectDir,
     });
 
-    return this.buildResult();
+    return this.buildResult(config);
   }
 
   /** Run the change detector for a specific set of changed files. */
@@ -87,25 +110,23 @@ export class KtoRunner {
     const config = await loadConfig(this.projectDir, { requireVault: true });
     const fileList = changedFiles.join('\n');
 
-    await this.runAgent('kto-change-detector', config.agents.change_detector, {
+    await this.runAgent(config, 'kto-change-detector', {
       task: `update knowledge for changed files:\n${fileList}`,
       cwd: this.projectDir,
     });
 
-    return this.buildResult();
+    return this.buildResult(config);
   }
 
   private async runAgent(
-    agentName: string,
-    defaultModel: string,
+    config: KtoConfig,
+    agentName: AgentName,
     opts: { task: string; cwd: string },
   ): Promise<void> {
-    const model = this.modelOverrides[agentName] ?? defaultModel;
-
-    const agentDefPath = new URL(`../../agents/${agentName}.md`, import.meta.url);
+    const runContext = this.resolveAgentRunContext(config, agentName);
     let agentDef: string;
     try {
-      agentDef = await readFile(agentDefPath, 'utf-8');
+      agentDef = await this.readAgentDefinition(agentName);
     } catch {
       throw new Error(`Agent definition not found: ${agentName}.md`);
     }
@@ -123,7 +144,7 @@ export class KtoRunner {
         allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],
         maxTurns: 50,
         cwd: opts.cwd,
-        model,
+        model: runContext.model,
       },
     });
 
@@ -134,20 +155,79 @@ export class KtoRunner {
     }
   }
 
-  private async buildResult(): Promise<KtoPipelineResult> {
+  private resolveAgentRunContext(config: KtoConfig, agentName: AgentName): ResolvedAgentRunContext {
+    const configKey = AGENT_CONFIG_KEY_BY_NAME[agentName];
+    const model = this.modelOverrides[agentName]
+      ?? this.modelOverrides[configKey]
+      ?? config.agents[configKey];
+
+    return {
+      name: agentName,
+      configKey,
+      model,
+    };
+  }
+
+  private async readAgentDefinition(agentName: AgentName): Promise<string> {
+    const candidatePaths = [
+      new URL(`../agents/${agentName}.md`, import.meta.url),
+      new URL(`../../agents/${agentName}.md`, import.meta.url),
+    ];
+
+    for (const path of candidatePaths) {
+      try {
+        return await readFile(path, 'utf-8');
+      } catch {
+        // try next candidate path
+      }
+    }
+
+    throw new Error(`Agent definition not found: ${agentName}.md`);
+  }
+
+  private resolvePaths(config: KtoConfig): ResolvedPaths {
+    const outputDir = join(this.projectDir, config.output_dir);
+    return {
+      outputDir,
+      enrichedKnowledgePath: join(outputDir, 'enriched_knowledge.json'),
+    };
+  }
+
+  private async buildResult(config: KtoConfig): Promise<KtoPipelineResult> {
+    const paths = this.resolvePaths(config);
+
     try {
-      const enrichedPath = join(this.projectDir, '.kto', 'enriched_knowledge.json');
-      const raw = await readFile(enrichedPath, 'utf-8');
+      const raw = await readFile(paths.enrichedKnowledgePath, 'utf-8');
       const graph = JSON.parse(raw) as { features?: unknown[]; modules?: unknown[] };
+
+      if (!Array.isArray(graph.features) || !Array.isArray(graph.modules)) {
+        return {
+          success: false,
+          filesScanned: 0,
+          featuresFound: 0,
+          modulesFound: 0,
+          notesWritten: 0,
+          error: `Invalid enriched knowledge format at ${paths.enrichedKnowledgePath}: expected features/modules arrays`,
+        };
+      }
+
       return {
         success: true,
         filesScanned: 0,
-        featuresFound: Array.isArray(graph.features) ? graph.features.length : 0,
-        modulesFound: Array.isArray(graph.modules) ? graph.modules.length : 0,
+        featuresFound: graph.features.length,
+        modulesFound: graph.modules.length,
         notesWritten: 0,
       };
-    } catch {
-      return { success: true, filesScanned: 0, featuresFound: 0, modulesFound: 0, notesWritten: 0 };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        filesScanned: 0,
+        featuresFound: 0,
+        modulesFound: 0,
+        notesWritten: 0,
+        error: `Failed to build pipeline result from ${paths.enrichedKnowledgePath}: ${msg}`,
+      };
     }
   }
 }

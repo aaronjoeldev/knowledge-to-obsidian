@@ -20,25 +20,52 @@ Initialize kto configuration for the current project by creating or updating `.k
 cat .kto/config.json 2>/dev/null || echo "NO_CONFIG"
 ```
 
-If config exists, display current values and ask if the user wants to update them.
+If config exists, parse it and keep it in memory as `existing_config`.
+If parsing fails, continue with empty object `{}` and tell the user defaults will be used.
+
+Also compute `current_dir_name` from the current directory basename.
+
+Build effective defaults from existing values first, then fall back to static defaults:
+
+- `default_vault_path = existing_config.vault_path || ""`
+- `default_project_id = existing_config.project_id || current_dir_name.toUpperCase()`
+- `default_obsidian_subfolder = existing_config.obsidian_subfolder || "Projects/" + default_project_id`
+- `default_output_dir = existing_config.output_dir || ".kto"`
+- `default_agents.project_mapper = existing_config.agents?.project_mapper || "claude-haiku-4-5-20251001"`
+- `default_agents.graph_builder = existing_config.agents?.graph_builder || "claude-sonnet-4-6"`
+- `default_agents.obsidian_sync = existing_config.agents?.obsidian_sync || "claude-haiku-4-5-20251001"`
+- `default_agents.change_detector = existing_config.agents?.change_detector || "claude-haiku-4-5-20251001"`
 
 ## Step 2 — Gather required information
 
 Ask the user (using AskUserQuestion):
 
-1. **Vault path**: "What is the absolute path to your Obsidian vault? (e.g., /Users/yourname/Notes/MyVault)"
-2. **Project ID**: "What short ID should be used for this project? (uppercase, e.g., MY-APP). Press Enter to use the current directory name."
-3. **Vault subfolder**: "What subfolder inside the vault should kto use for this project? (e.g., Projects/MY-APP). Press Enter to accept the default."
+1. **Vault path**: "What is the absolute path to your Obsidian vault? [current: {default_vault_path}]"
+2. **Project ID**: "What short ID should be used for this project? [current: {default_project_id}]"
+3. **Vault subfolder**: "What subfolder inside the vault should kto use? [current: {default_obsidian_subfolder}]"
+4. **Output directory**: "Where should kto write its output files? [current: {default_output_dir}]"
+
+Important behavior:
+- If user presses Enter on any prompt, keep the current/default value.
+- Do not replace existing values with static defaults when the user provides empty input.
 
 ## Step 3 — Model configuration (optional)
 
 Ask: "Do you want to customize which LLM model each agent uses? (y/N)"
 
-If yes, show current defaults and ask for overrides:
-- Project Mapper (default: claude-haiku-4-5-20251001) — cheap, runs on every file
-- Graph Builder (default: claude-sonnet-4-6) — the reasoning agent, needs more capability
-- Obsidian Sync (default: claude-haiku-4-5-20251001) — templated writing
-- Change Detector (default: claude-haiku-4-5-20251001) — fast, targeted
+If yes, ask per-agent model with current defaults (Enter keeps existing value):
+- Project Mapper (current: `{default_agents.project_mapper}`) — cheap, runs on every file
+- Graph Builder (current: `{default_agents.graph_builder}`) — the reasoning agent, needs more capability
+- Obsidian Sync (current: `{default_agents.obsidian_sync}`) — templated writing
+- Change Detector (current: `{default_agents.change_detector}`) — fast, targeted
+
+Store answers as:
+- `final_agents.project_mapper`
+- `final_agents.graph_builder`
+- `final_agents.obsidian_sync`
+- `final_agents.change_detector`
+
+If user chooses "No", set `final_agents = default_agents`.
 
 ## Step 4 — Write config
 
@@ -52,25 +79,28 @@ Write `.kto/config.json` with the Write tool:
 
 ```json
 {
-  "vault_path": "{user_answer_1}",
-  "project_id": "{user_answer_2}",
-  "obsidian_subfolder": "{user_answer_3}",
-  "output_dir": ".kto",
+  "vault_path": "{final_vault_path}",
+  "project_id": "{final_project_id}",
+  "obsidian_subfolder": "{final_obsidian_subfolder}",
+  "output_dir": "{final_output_dir}",
   "agents": {
-    "project_mapper": "claude-haiku-4-5-20251001",
-    "graph_builder": "claude-sonnet-4-6",
-    "obsidian_sync": "claude-haiku-4-5-20251001",
-    "change_detector": "claude-haiku-4-5-20251001"
+    "project_mapper": "{final_agents.project_mapper}",
+    "graph_builder": "{final_agents.graph_builder}",
+    "obsidian_sync": "{final_agents.obsidian_sync}",
+    "change_detector": "{final_agents.change_detector}"
   }
 }
 ```
 
+This final JSON must use the computed `final_*` values (including model customizations), not hardcoded defaults.
+
 ## Step 5 — Add to .gitignore
 
-Append `.kto/` to `.gitignore` if not already present:
+Append `.kto/` and the configured output directory to `.gitignore` if not already present:
 
 ```bash
 grep -q "^\.kto/" .gitignore 2>/dev/null || echo ".kto/" >> .gitignore
+grep -q "^${final_output_dir}/" .gitignore 2>/dev/null || echo "${final_output_dir}/" >> .gitignore
 ```
 
 ## Step 6 — Confirm

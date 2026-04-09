@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, normalize } from 'node:path';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,12 +75,20 @@ export async function loadConfig(
     throw new Error(`Config at ${configPath} must be a JSON object`);
   }
 
+  const parsedAgents = parsed['agents'];
+  if (
+    parsedAgents !== undefined
+    && (typeof parsedAgents !== 'object' || parsedAgents === null || Array.isArray(parsedAgents))
+  ) {
+    throw new Error(`Invalid config at ${configPath}: agents must be an object`);
+  }
+
   const merged: KtoConfig = {
     ...structuredClone(CONFIG_DEFAULTS),
     ...parsed,
     agents: {
       ...CONFIG_DEFAULTS.agents,
-      ...(parsed['agents'] as Partial<KtoAgentsConfig> ?? {}),
+      ...(parsedAgents as Partial<KtoAgentsConfig> ?? {}),
     },
   };
 
@@ -92,7 +100,61 @@ function validateAndReturn(
   options: LoadConfigOptions,
   configPath: string,
 ): KtoConfig {
-  if (options.requireVault === true && !config.vault_path) {
+  if (typeof config.vault_path !== 'string') {
+    throw new Error(`Invalid config at ${configPath}: vault_path must be a string`);
+  }
+
+  const vaultPath = config.vault_path.trim();
+  if (vaultPath !== '' && !isAbsolute(config.vault_path)) {
+    throw new Error(`Invalid config at ${configPath}: vault_path must be an absolute path when set`);
+  }
+
+  if (typeof config.project_id !== 'string' || config.project_id.trim() === '') {
+    throw new Error(`Invalid config at ${configPath}: project_id must be a non-empty string`);
+  }
+
+  if (
+    typeof config.obsidian_subfolder !== 'string'
+    || config.obsidian_subfolder.trim() === ''
+  ) {
+    throw new Error(`Invalid config at ${configPath}: obsidian_subfolder must be a non-empty string`);
+  }
+
+  if (typeof config.output_dir !== 'string' || config.output_dir.trim() === '') {
+    throw new Error(`Invalid config at ${configPath}: output_dir must be a non-empty string`);
+  }
+
+  const outputDir = config.output_dir.trim();
+  if (isAbsolute(outputDir)) {
+    throw new Error(`Invalid config at ${configPath}: output_dir must be a relative path`);
+  }
+
+  const outputDirSegments = outputDir.split(/[\\/]+/);
+  if (outputDirSegments.some((segment) => segment === '..')) {
+    throw new Error(`Invalid config at ${configPath}: output_dir must not contain '..' path traversal`);
+  }
+
+  config.output_dir = normalize(outputDir).replace(/[\\/]+$/, '');
+
+  if (typeof config.agents !== 'object' || config.agents === null || Array.isArray(config.agents)) {
+    throw new Error(`Invalid config at ${configPath}: agents must be an object`);
+  }
+
+  const agentFields: Array<keyof KtoAgentsConfig> = [
+    'project_mapper',
+    'graph_builder',
+    'obsidian_sync',
+    'change_detector',
+  ];
+
+  for (const field of agentFields) {
+    const value = config.agents[field];
+    if (typeof value !== 'string' || value.trim() === '') {
+      throw new Error(`Invalid config at ${configPath}: agents.${field} must be a non-empty string`);
+    }
+  }
+
+  if (options.requireVault === true && vaultPath === '') {
     throw new Error(
       `vault_path is required but not set in ${configPath}. Run /kto:init to configure.`,
     );

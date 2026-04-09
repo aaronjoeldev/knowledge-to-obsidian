@@ -68,4 +68,78 @@ describe('loadConfig', () => {
       'vault_path',
     );
   });
+
+  it('throws when vault_path is relative', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({ vault_path: 'relative/path' }),
+    );
+
+    await expect(loadConfig(TMP_DIR)).rejects.toThrow('vault_path must be an absolute path');
+  });
+
+  it('throws when top-level config fields have invalid types', async () => {
+    const invalidConfig = {
+      project_id: 123,
+      obsidian_subfolder: true,
+      output_dir: ['.kto'],
+    };
+
+    writeFileSync(join(TMP_DIR, '.kto', 'config.json'), JSON.stringify(invalidConfig));
+
+    await expect(loadConfig(TMP_DIR)).rejects.toThrow('project_id must be a non-empty string');
+  });
+
+  it('throws when agents is not an object', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({ agents: 'claude-sonnet-4-6' }),
+    );
+
+    await expect(loadConfig(TMP_DIR)).rejects.toThrow('agents must be an object');
+  });
+
+  it('throws when strings are empty after trimming', async () => {
+    const invalidConfig: Partial<KtoConfig> = {
+      project_id: '   ',
+      obsidian_subfolder: 'Projects/ABC',
+      output_dir: '.kto',
+      agents: {
+        ...CONFIG_DEFAULTS.agents,
+        graph_builder: '   ',
+      },
+    };
+
+    writeFileSync(join(TMP_DIR, '.kto', 'config.json'), JSON.stringify(invalidConfig));
+
+    await expect(loadConfig(TMP_DIR)).rejects.toThrow('project_id must be a non-empty string');
+  });
+
+  it('normalizes output_dir and trims whitespace', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({ output_dir: '  kto-out//nested/./  ' }),
+    );
+
+    const config = await loadConfig(TMP_DIR);
+    expect(config.output_dir).toBe('kto-out/nested');
+  });
+
+  it('rejects absolute output_dir paths', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({ output_dir: '/tmp/kto' }),
+    );
+
+    await expect(loadConfig(TMP_DIR)).rejects.toThrow('output_dir must be a relative path');
+  });
+
+  it('rejects output_dir traversal segments', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({ output_dir: '../tmp/kto' }),
+    );
+
+    await expect(loadConfig(TMP_DIR)).rejects.toThrow("output_dir must not contain '..' path traversal");
+  });
 });

@@ -21,11 +21,16 @@ If no arguments provided, auto-detect via git.
 
 <pre_check>
 ```bash
-test -f .kto/enriched_knowledge.json && echo "OK" || echo "MISSING"
-cat .kto/config.json 2>/dev/null || echo "NO_CONFIG"
+test -f .kto/config.json && echo "CONFIG_OK" || echo "NO_CONFIG"
+OUTPUT_DIR=$(node -e "const fs=require('fs');const raw=fs.readFileSync('.kto/config.json','utf8');let c;try{c=JSON.parse(raw)}catch(err){console.error('CONFIG_PARSE_ERROR: '+(err&&err.message?err.message:String(err)));process.exit(2)}const out=(typeof c.output_dir==='string'&&c.output_dir.trim()!=='')?c.output_dir.trim():'.kto';process.stdout.write(out)")
+test -f "$OUTPUT_DIR/enriched_knowledge.json" && echo "OK" || echo "MISSING"
 ```
 
 If MISSING: "enriched_knowledge.json not found. Run /kto:analyze first."
+If NO_CONFIG: "kto is not initialized. Run /kto:init first."
+If config parsing fails: ".kto/config.json is invalid JSON. Fix it or run /kto:init to rewrite it."
+
+Treat `.kto/config.json` as the authoritative config source and derive file paths from `output_dir`.
 </pre_check>
 
 <detect_changes>
@@ -39,13 +44,13 @@ git diff --name-only --cached 2>/dev/null
 git ls-files --others --exclude-standard 2>/dev/null
 ```
 
-Compare modification times: only include files newer than `.kto/enriched_knowledge.json`.
+Compare modification times: only include files newer than `{output_dir}/enriched_knowledge.json`.
 
 ```bash
-find . -newer .kto/enriched_knowledge.json -type f \
+find . -newer "$OUTPUT_DIR/enriched_knowledge.json" -type f \
   -not -path '*/node_modules/*' \
   -not -path '*/.git/*' \
-  -not -path '*/.kto/*' \
+  -not -path "*/$OUTPUT_DIR/*" \
   2>/dev/null
 ```
 </detect_changes>

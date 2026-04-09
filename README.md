@@ -1,186 +1,137 @@
 # kto — Knowledge to Obsidian
 
-**Verwandle jede Codebase automatisch in eine strukturierte Obsidian Knowledge Base.**
+Turn a code repository into a structured Obsidian knowledge base.
 
-kto analysiert ein Repository vollständig, erkennt Features, Module und Abhängigkeiten, und schreibt alles als verlinkte Markdown-Notizen in deinen Obsidian Vault — ohne je deine eigenen Inhalte zu überschreiben.
+kto installs runtime commands/agents for **Claude Code** and **OpenCode**. Inside a project, it uses `.kto/config.json` to analyze your codebase, build a knowledge graph, and sync markdown notes into your Obsidian vault.
 
----
+## What this tool is
 
-## Inhaltsverzeichnis
+kto provides a 3-step pipeline:
 
-- [Voraussetzungen](#voraussetzungen)
-- [Installation](#installation)
-  - [Claude Code](#installation-für-claude-code)
-  - [OpenCode](#installation-für-opencode)
-  - [Beide gleichzeitig](#beide-gleichzeitig)
-- [Einrichtung eines Projekts](#einrichtung-eines-projekts)
-- [Verwendung](#verwendung)
-- [Konfiguration](#konfiguration)
-  - [config.json Referenz](#configjson-referenz)
-  - [Modelle pro Agent anpassen](#modelle-pro-agent-anpassen)
-- [Wie kto funktioniert](#wie-kto-funktioniert)
-  - [Die Pipeline](#die-pipeline)
-  - [Die vier Agenten](#die-vier-agenten)
-  - [Das Obsidian-Vault-Layout](#das-obsidian-vault-layout)
-  - [AUTO-GENERATED Blöcke](#auto-generated-blöcke)
-- [Programmierbare API](#programmierbare-api)
-- [Entwicklung](#entwicklung)
-- [Häufige Probleme](#häufige-probleme)
+1. **Project Mapper** → scans repository structure into `{output_dir}/knowledge.json`
+2. **Graph Builder** → builds semantic graph into `{output_dir}/enriched_knowledge.json`
+3. **Obsidian Sync** → writes/updates notes in your vault
 
----
+For day-to-day updates, it also provides a **Change Detector** fast path (`diff`) that updates only affected entities.
 
-## Voraussetzungen
+## Requirements
 
-| Anforderung | Version | Hinweis |
-|-------------|---------|---------|
-| Node.js | ≥ 18.0.0 | Überprüfen mit `node --version` |
-| Claude Code **oder** OpenCode | aktuell | Mindestens eines der beiden |
-| Obsidian | beliebig | Vault muss lokal existieren |
-| Git | beliebig | Empfohlen für `/kto:diff` |
-
----
+- Node.js **>= 18**
+- Claude Code and/or OpenCode
+- A local Obsidian vault path (absolute path)
+- Git recommended for incremental diff detection
 
 ## Installation
 
-kto installiert sich in deine KI-Editor-Konfiguration und registriert Slash-Commands und Agenten-Definitionen. Der Installer ist interaktiv — er fragt nach Runtime und Installationsort.
+### Recommended (npx)
 
-### Curl-Installer (empfohlen)
+```bash
+npx kto-cc@latest
+```
+
+Flags:
+
+- `--claude` (Claude Code only)
+- `--opencode` (OpenCode only)
+- `--both` / `--all`
+- `--global` / `-g`
+- `--local` / `-l`
+- `--uninstall` / `-u`
+- `--help` / `-h`
+
+Examples:
+
+```bash
+# Claude Code globally
+npx kto-cc@latest --claude --global
+
+# OpenCode globally
+npx kto-cc@latest --opencode --global
+
+# Both globally
+npx kto-cc@latest --both --global
+```
+
+### Alternative (curl installer)
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh)
 ```
 
-> **Hinweis:** `bash <(...)` statt `curl ... | bash` — so bleibt das Terminal interaktiv und die Prompts funktionieren.
+## What gets installed
 
-Mit Flags (überspringt die interaktiven Prompts):
+### Claude Code
 
-```bash
-# Claude Code, global
-bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh) --claude --global
+- `~/.claude/kto/agents/*`
+- `~/.claude/kto/commands/*`
+- `~/.claude/commands/kto/*` (for slash-command discovery)
 
-# OpenCode, global
-bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh) --opencode --global
+### OpenCode
 
-# Beide Runtimes, global
-bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh) --both --global
+- `~/.config/opencode/agents/*` (converted agent files)
+- `~/.config/opencode/commands/kto-*.md` (converted command files)
+
+OpenCode global config path resolution:
+
+1. `$OPENCODE_CONFIG_DIR`
+2. `$XDG_CONFIG_HOME/opencode`
+3. `~/.config/opencode`
+
+## Quick start
+
+In your target repository:
+
+1. Run initialization:
+   - Claude Code: `/kto:init`
+   - OpenCode: `/kto-init`
+2. Provide:
+   - absolute `vault_path`
+   - stable `project_id`
+   - `obsidian_subfolder`
+   - `output_dir` (where JSON artifacts are stored)
+   - optional per-agent model overrides
+3. Run first full analysis:
+   - Claude Code: `/kto:analyze`
+   - OpenCode: `/kto-analyze`
+
+Generated in your repo (default layout):
+
+```text
+.kto/
+  config.json
+  knowledge.json
+  enriched_knowledge.json
 ```
 
----
+> `.kto/config.json` is the **authoritative config source** used by commands and agents.
+> The graph artifacts live under `output_dir` (default: `.kto`).
 
-### Manuell aus dem Repository
+## Slash commands and daily workflow
 
-```bash
-git clone https://github.com/aaronjoeldev/knowledge-to-obsidian.git
-cd knowledge-to-obsidian
-node bin/install.cjs
-```
+Claude Code command names use `:`. OpenCode uses `-`.
 
----
+| Purpose | Claude Code | OpenCode |
+|---|---|---|
+| Initialize project | `/kto:init` | `/kto-init` |
+| Full analysis pipeline | `/kto:analyze` | `/kto-analyze` |
+| Incremental update | `/kto:diff [files...]` | `/kto-diff [files...]` |
+| Vault sync from existing graph | `/kto:sync` | `/kto-sync` |
 
-### Installationsoptionen
+When to use what:
 
-Der Installer fragt interaktiv:
+- **analyze**: first run, large refactors, or when you need a clean rebuild
+- **diff**: regular development after code changes
+- **sync**: regenerate vault notes from existing `enriched_knowledge.json` only
 
-```
-  Which runtime(s) would you like to install for?
+## Configuration reference (`.kto/config.json`)
 
-  1) Claude Code  (~/.claude)
-  2) OpenCode     (~/.config/opencode)
-  3) Both
-
-  Choice [1]:
-
-  Install globally or into current project?
-
-  1) Global (recommended — available in all projects)
-  2) Local  (current project only: /your/project)
-
-  Choice [1]:
-```
-
-**Verfügbare Flags:**
-
-| Flag | Beschreibung |
-|------|--------------|
-| `--claude` | Nur Claude Code |
-| `--opencode` | Nur OpenCode |
-| `--both` / `--all` | Beide Runtimes |
-| `--global` / `-g` | Global installieren |
-| `--local` / `-l` | Nur aktuelles Projekt |
-| `--uninstall` / `-u` | kto-Dateien entfernen |
-| `--help` / `-h` | Hilfe anzeigen |
-
----
-
-### Installierte Dateien
-
-**Claude Code:**
-
-| Pfad | Inhalt |
-|------|--------|
-| `~/.claude/kto/agents/` | Die 4 Agenten-Definitionen |
-| `~/.claude/kto/commands/` | Die 4 Slash-Command-Definitionen |
-| `~/.claude/commands/kto/` | Kopie für Claude Code Discovery |
-
-**OpenCode:**
-
-| Pfad | Inhalt |
-|------|--------|
-| `~/.config/opencode/agents/` | Konvertierte Agenten-Definitionen |
-| `~/.config/opencode/commands/` | `kto-init.md`, `kto-analyze.md`, … |
-
-kto respektiert Standard-XDG-Pfade für OpenCode:
-
-| Priorität | Pfad |
-|-----------|------|
-| 1. | `$OPENCODE_CONFIG_DIR` |
-| 2. | `$XDG_CONFIG_HOME/opencode` |
-| 3. | `~/.config/opencode` (Standard) |
-
----
-
-## Einrichtung eines Projekts
-
-Nach der Installation öffnest du ein beliebiges Projekt in Claude Code oder OpenCode und führst einmalig `/kto:init` aus.
-
-### Schritt 1 — `/kto:init` ausführen
-
-```
-/kto:init
-```
-
-Der Assistent fragt dich interaktiv:
-
-```
-1. Was ist der absolute Pfad zu deinem Obsidian Vault?
-   → z.B. /Users/dein-name/Notes/MyVault
-
-2. Welche kurze ID soll für dieses Projekt verwendet werden? (GROSSBUCHSTABEN)
-   → z.B. MY-APP   (Standard: aktueller Verzeichnisname)
-
-3. In welchem Unterordner im Vault soll kto die Notizen ablegen?
-   → z.B. Projects/MY-APP   (Standard: Projects/MY-APP)
-
-4. Willst du die LLM-Modelle pro Agent anpassen? (y/N)
-   → Optional, Defaults sind bereits sinnvoll gewählt
-```
-
-**Was `/kto:init` erstellt:**
-
-```
-mein-projekt/
-├── .kto/
-│   └── config.json     ← Konfiguration
-└── .gitignore          ← .kto/ wird automatisch eingetragen
-```
-
-**Beispiel `.kto/config.json`:**
+Canonical shape:
 
 ```json
 {
-  "vault_path": "/Users/dein-name/Notes/MyVault",
-  "project_id": "MY-APP",
-  "obsidian_subfolder": "Projects/MY-APP",
+  "vault_path": "/absolute/path/to/vault",
+  "project_id": "MY-PROJECT",
+  "obsidian_subfolder": "Projects/MY-PROJECT",
   "output_dir": ".kto",
   "agents": {
     "project_mapper": "claude-haiku-4-5-20251001",
@@ -191,479 +142,142 @@ mein-projekt/
 }
 ```
 
-> **Tipp:** Die config-Datei kann jederzeit manuell bearbeitet werden. `/kto:init` kann auch mehrfach ausgeführt werden — bestehende Werte werden angezeigt und können übernommen oder geändert werden.
+Defaults (if fields are omitted by config loading):
 
----
+- `vault_path`: `""`
+- `project_id`: `"PROJECT"`
+- `obsidian_subfolder`: `"Projects/PROJECT"`
+- `output_dir`: `".kto"`
+- agent model defaults as shown above
 
-### Schritt 2 — Erste Analyse
+Validation rules (from runtime config loader):
 
-```
-/kto:analyze
-```
+- `vault_path`: string; if set, must be an **absolute path**
+- `project_id`: non-empty string
+- `obsidian_subfolder`: non-empty string
+- `output_dir`: non-empty **relative** path, must not be absolute, must not contain `..`
+- each `agents.*`: non-empty string
 
-Dieser Command führt die gesamte Pipeline aus (dauert je nach Projektgröße 1–5 Minuten):
+### `output_dir` behavior
 
-```
-✓ kto analysis complete
+- `output_dir` is resolved relative to the project root.
+- `knowledge.json` and `enriched_knowledge.json` are read/written under that directory.
+- Commands, agents, and the programmatic runner derive artifact paths from this value.
+- Invalid config should be fixed instead of relying on fallback behavior.
 
-  knowledge.json: 247 files scanned
-  enriched_knowledge.json: 8 features, 34 modules, 12 third parties
-  Obsidian vault: 56 notes written/updated at /Users/dein-name/Notes/MyVault/Projects/MY-APP
-```
+## Embedding into your own workflow
 
-Der Vault enthält danach vollständig verlinkte Notizen zu allen Features, Modulen und Drittanbietern deines Projekts.
+You can use kto in two ways:
 
----
+1. **Slash commands** inside Claude Code or OpenCode for interactive use
+2. **Programmatic API** via `KtoRunner` if you want to call the pipeline from your own scripts or tools
 
-## Verwendung
+Typical embedding cases:
 
-### Täglicher Workflow
+- run a full analysis after project setup
+- trigger `diff()` from your own automation after file changes
+- regenerate vault notes from existing graph data with `sync()`
+- supply model overrides from your own wrapper script
 
-| Situation | Command |
-|-----------|---------|
-| Erstes Setup | `/kto:init` |
-| Vollständige Erstanalyse | `/kto:analyze` |
-| Nach Code-Änderungen (schnell) | `/kto:diff` |
-| Vault neu synchronisieren | `/kto:sync` |
+## Programmatic API (embedding)
 
----
+`src/index.ts` exports a programmatic runner:
 
-### `/kto:analyze` — Vollständige Pipeline
+- `new KtoRunner({ projectDir, modelOverrides? })`
+- `runner.analyze()`
+- `runner.diff(changedFiles)`
+- `runner.sync()`
 
-Analysiert das gesamte Projekt von Grund auf. Nutze diesen Command:
-- bei der ersten Analyse eines neuen Projekts
-- nach großen Refactorings
-- wenn `/kto:diff` sich falsch verhält und du einen frischen Start möchtest
+Example:
 
-```
-/kto:analyze
-```
-
-Führt intern diese 3 Agenten sequenziell aus:
-
-```
-[Project Mapper]  → .kto/knowledge.json
-[Graph Builder]   → .kto/enriched_knowledge.json
-[Obsidian Sync]   → Obsidian Vault Notizen
-```
-
----
-
-### `/kto:diff` — Inkrementelles Update
-
-Erkennt automatisch welche Dateien sich seit der letzten Analyse geändert haben und aktualisiert nur die betroffenen Entitäten. Deutlich schneller als `/kto:analyze`.
-
-```
-# Automatische Erkennung via git diff
-/kto:diff
-
-# Explizite Dateien angeben
-/kto:diff src/auth/service.ts src/billing/handler.ts
-```
-
-**Wann nutzen:** Nach jedem Commit oder nach dem Schreiben einer neuen Feature.
-
----
-
-### `/kto:sync` — Nur Vault synchronisieren
-
-Schreibt Obsidian-Notizen aus dem bereits vorhandenen `.kto/enriched_knowledge.json` — ohne das Repository erneut zu scannen. Sinnvoll wenn:
-- die Vault-Notizen manuell gelöscht/beschädigt wurden
-- du die `enriched_knowledge.json` manuell editiert hast
-- der Vault-Pfad sich geändert hat
-
-```
-/kto:sync
-```
-
----
-
-## Konfiguration
-
-### config.json Referenz
-
-Die Datei `.kto/config.json` im Projekt-Root steuert das gesamte Verhalten:
-
-```json
-{
-  "vault_path": "/absolute/pfad/zum/vault",
-  "project_id": "MEIN-PROJEKT",
-  "obsidian_subfolder": "Projects/MEIN-PROJEKT",
-  "output_dir": ".kto",
-  "agents": {
-    "project_mapper": "claude-haiku-4-5-20251001",
-    "graph_builder": "claude-sonnet-4-6",
-    "obsidian_sync": "claude-haiku-4-5-20251001",
-    "change_detector": "claude-haiku-4-5-20251001"
-  }
-}
-```
-
-| Feld | Typ | Beschreibung |
-|------|-----|--------------|
-| `vault_path` | string | **Pflichtfeld für analyze/sync.** Absoluter Pfad zum Obsidian-Vault-Stammverzeichnis. |
-| `project_id` | string | Stabile ID für alle Entitäten (z.B. `FEAT-001`, `MODULE-Auth`). Einmal gesetzt, nicht mehr ändern. |
-| `obsidian_subfolder` | string | Unterordner im Vault für dieses Projekt. Mehrere Projekte können denselben Vault nutzen. |
-| `output_dir` | string | Verzeichnis für interne Dateien (`knowledge.json` etc.). Relativ zum Projekt-Root. Standard: `.kto`. |
-| `agents` | object | Modell-ID pro Agent (siehe unten). |
-
----
-
-### Modelle pro Agent anpassen
-
-Jeder der vier Agenten kann ein anderes LLM-Modell verwenden. Das erlaubt dir, Kosten und Qualität zu balancieren:
-
-| Agent | Standard-Modell | Warum |
-|-------|----------------|-------|
-| `project_mapper` | `claude-haiku-4-5-20251001` | Mechanisches Dateiscannen, kein Reasoning nötig |
-| `graph_builder` | `claude-sonnet-4-6` | Semantisches Reasoning — braucht mehr Fähigkeit |
-| `obsidian_sync` | `claude-haiku-4-5-20251001` | Template-basiertes Schreiben, günstig |
-| `change_detector` | `claude-haiku-4-5-20251001` | Schnelle, gezielte Updates |
-
-**Beispiel — nur den Graph Builder upgraden:**
-
-```json
-{
-  "vault_path": "/Users/dein-name/Notes/MyVault",
-  "project_id": "MY-APP",
-  "agents": {
-    "graph_builder": "claude-opus-4-6"
-  }
-}
-```
-
-Felder die weggelassen werden, erhalten automatisch die Standardwerte. Jede gültige Anthropic Model-ID funktioniert.
-
----
-
-## Wie kto funktioniert
-
-### Die Pipeline
-
-```
-Repo-Dateien
-    │
-    ▼
-[kto-project-mapper]         — liest Dateien, Imports, Exports
-    │
-    ▼
-.kto/knowledge.json          — rohe Fakten, keine Interpretation
-    │
-    ▼
-[kto-graph-builder]          — erkennt Features, clustert Module
-    │
-    ▼
-.kto/enriched_knowledge.json — semantisches Wissensmodell
-    │
-    ▼
-[kto-obsidian-sync]          — schreibt Markdown-Notizen
-    │
-    ▼
-Obsidian Vault Notizen
-```
-
-Bei Codeänderungen gibt es einen schnellen Pfad:
-
-```
-Geänderte Dateien
-    │
-    ▼
-[kto-change-detector]        — nur betroffene Entitäten aktualisieren
-    │
-    ▼
-Partielle Updates in Vault
-```
-
----
-
-### Die vier Agenten
-
-#### `kto-project-mapper` (blau)
-
-Scannt das Repository ohne jede Interpretation und erzeugt `knowledge.json`:
-
-- **Was er tut:** Findet alle Dateien, klassifiziert sie (source/config/docs/tests), erkennt Imports/Exports, identifiziert Entry Points
-- **Was er nicht tut:** Keine semantische Analyse, keine Annahmen über Bedeutung
-- **Unterstützte Sprachen:** TypeScript, JavaScript, Python, Go, Rust, Java, und weitere
-- **Output:** `.kto/knowledge.json`
-
-#### `kto-graph-builder` (lila)
-
-Der "Brain Layer" — transformiert rohe Daten in ein semantisches Modell:
-
-- **Feature-Erkennung:** Anhand von API-Routes, Ordnerstruktur und Dateinamen
-- **Module-Clustering:** Gruppiert zusammengehörige Dateien zu Modulen
-- **Drittanbieter-Erkennung:** Aus `package.json` und Import-Analyse
-- **ID-Vergabe:** Stabile IDs (`FEAT-001`, `MODULE-AuthService`, `THIRD-Stripe`)
-- **Wichtig:** Bestehende IDs werden bei Wiederholungsläufen **preserviert** — Obsidian-Links bleiben stabil
-- **Output:** `.kto/enriched_knowledge.json`
-
-#### `kto-obsidian-sync` (grün)
-
-Schreibt die Knowledge Base in den Vault:
-
-- **Goldene Regel:** Überschreibt **niemals** Inhalte außerhalb der `<!-- AUTO-GENERATED -->` Blöcke
-- **Wikilinks:** Alle Entitäten sind über `[[FEAT-001]]`, `[[MODULE-Auth]]` etc. verlinkt
-- **Deterministische Dateinamen:** `FEAT-001_UserAuthentication.md` — keine kreative Variation
-- **Bestehende Dateien:** Nur der AUTO-GENERATED-Block wird aktualisiert, eigene Notizen darunter bleiben erhalten
-- **Output:** Markdown-Dateien im Vault
-
-#### `kto-change-detector` (gelb)
-
-Schneller Pfad für inkrementelle Updates:
-
-- Findet heraus, welche Module von geänderten Dateien betroffen sind
-- Aktualisiert nur diese Entitäten in `enriched_knowledge.json`
-- Schreibt nur die betroffenen Vault-Notizen neu
-- Ziel: unter 30 Agentic Turns bleiben (schnell!)
-
----
-
-### Das Obsidian-Vault-Layout
-
-kto erstellt folgende Struktur im Vault-Unterordner:
-
-```
-{obsidian_subfolder}/
-│
-├── Facts.md                          # Projekt-Übersicht (Features, Technologien)
-├── Technology.md                     # Tech-Stack-Details
-│
-├── Features/
-│   ├── Features_Index.md             # Tabelle aller Features
-│   ├── FEAT-001_UserAuthentication.md
-│   ├── FEAT-002_BillingPayments.md
-│   └── ...
-│
-├── Code_Map/
-│   ├── Modules_Index.md              # Tabelle aller Module
-│   ├── MODULE-AuthService.md
-│   ├── MODULE-BillingService.md
-│   └── ...
-│
-├── Third_Party/
-│   ├── THIRD-Stripe.md
-│   ├── THIRD-Auth0.md
-│   └── ...
-│
-└── Security/
-    └── Security_Overview.md          # Auth-Modell, PII-Flows, Bedrohungen
-```
-
-**Beispiel-Notiz `FEAT-001_UserAuthentication.md`:**
-
-```markdown
----
-type: feature
-id: FEAT-001
-project: MY-APP
-status: implemented
-security_impact: high
-generated_by: kto
----
-
-# User Authentication
-
-<!-- AUTO-GENERATED START -->
-**Status:** implemented
-**Security Impact:** high
-
-## Entry Points
-
-- `api/auth/login`
-- `api/auth/register`
-
-## Implemented By
-
-- [[MODULE-AuthService]]
-- [[MODULE-SessionManager]]
-
-## Third Party Dependencies
-
-- [[THIRD-Auth0]]
-
-*Last synced: 2026-04-07T15:30:00Z*
-<!-- AUTO-GENERATED END -->
-
-<!-- Hier kannst du eigene Notizen schreiben — sie werden nie überschrieben -->
-```
-
----
-
-### AUTO-GENERATED Blöcke
-
-Das wichtigste Sicherheitskonzept von kto: Nur der Bereich zwischen den Markierungen wird bei Updates ersetzt.
-
-```markdown
-<!-- AUTO-GENERATED START -->
-... dieser Bereich wird von kto verwaltet ...
-<!-- AUTO-GENERATED END -->
-
-Alles hier gehört dir und wird nie angefasst.
-```
-
-**Verhalten:**
-- **Datei existiert noch nicht:** kto schreibt die vollständige Datei inkl. Frontmatter und AUTO-GENERATED-Block
-- **Datei existiert bereits:** Nur der Inhalt zwischen den Markierungen wird ersetzt
-- **Keine Markierungen vorhanden:** kto hängt den Block am Ende der Datei an
-
----
-
-## Programmierbare API
-
-Für CI-Pipelines oder eigene Tools kann kto auch direkt aus TypeScript/JavaScript genutzt werden:
-
-```typescript
+```ts
 import { KtoRunner } from 'kto-cc';
 
-// Vollständige Analyse
 const runner = new KtoRunner({
-  projectDir: '/pfad/zum/projekt',
-  // Optional: Modell pro Agent überschreiben
+  projectDir: '/absolute/path/to/repo',
   modelOverrides: {
-    'kto-graph-builder': 'claude-opus-4-6',
-  },
+    graph_builder: 'claude-sonnet-4-6'
+    // also supports agent names like "kto-graph-builder"
+  }
 });
 
 const result = await runner.analyze();
-console.log(`${result.featuresFound} Features, ${result.modulesFound} Module gefunden`);
-
-// Nur Vault-Sync (kein neuer Scan)
-await runner.sync();
-
-// Inkrementelles Update
-await runner.diff(['src/auth/service.ts', 'src/billing/handler.ts']);
-```
-
-**Konfigurationsvalidierung:**
-
-```typescript
-import { loadConfig, validateKnowledgeGraph } from 'kto-cc';
-
-const config = await loadConfig('/pfad/zum/projekt', { requireVault: true });
-// Wirft Fehler wenn vault_path nicht gesetzt ist
-
-const graph = JSON.parse(await fs.readFile('.kto/enriched_knowledge.json', 'utf-8'));
-const result = validateKnowledgeGraph(graph);
-if (!result.valid) {
-  console.error(result.errors);
+if (!result.success) {
+  console.error(result.error);
 }
 ```
 
----
+## Agent/model selection behavior
 
-## Entwicklung
+There are 4 model slots in config:
 
-### Repository aufsetzen
+- `project_mapper`
+- `graph_builder`
+- `obsidian_sync`
+- `change_detector`
 
-```bash
-git clone https://github.com/aaronjoeldev/knowledge-to-obsidian.git
-cd knowledge-to-obsidian
-npm install
+Important distinction:
+
+- **Programmatic API (`KtoRunner`)**: per-agent model assignment is reliably enforced (`config.agents` + `modelOverrides`).
+- **Slash commands (`/kto:*`, `/kto-*`)**: model enforcement depends on host/runtime capabilities. Treat config as your intended project-level target, but do not assume hard enforcement in every host.
+
+## Output files and Obsidian vault structure
+
+Repository artifacts:
+
+- `{output_dir}/knowledge.json` (raw structure)
+- `{output_dir}/enriched_knowledge.json` (semantic graph)
+
+Vault output root:
+
+- `{vault_path}/{obsidian_subfolder}`
+
+Expected structure:
+
+```text
+{obsidian_subfolder}/
+  Facts.md
+  Technology.md
+  Features/
+    Features_Index.md
+    FEAT-*.md
+  Code_Map/
+    Modules_Index.md
+    MODULE-*.md
+  Third_Party/
+    THIRD-*.md
+  Security/
+    Security_Overview.md
 ```
 
-### Tests ausführen
+Sync safety model:
 
-```bash
-npm test                # Einmalig ausführen
-npm run test:watch      # Watch-Modus
-npm run test:coverage   # Mit Coverage-Report
-```
+- kto manages content inside `<!-- AUTO-GENERATED START --> ... <!-- AUTO-GENERATED END -->`
+- user content outside these blocks is preserved
 
-```
-✓ tests/types.test.ts           (6 Tests)
-✓ tests/config.test.ts          (5 Tests)
-✓ tests/knowledge-validator.ts  (8 Tests)
-──────────────────────────────────────────
-  19 Tests passed
-```
+## Troubleshooting
 
-### TypeScript prüfen
+- **"kto is not initialized. Run /kto:init first."**
+  - Run init in the repository root to create `.kto/config.json`.
 
-```bash
-npm run typecheck   # Nur prüfen (kein Output)
-npm run build       # Kompilieren nach dist/
-```
+- **Invalid `.kto/config.json` JSON**
+  - Fix JSON manually or rerun init to rewrite.
 
-### Projektstruktur
+- **`vault_path` missing / empty**
+  - Set it in `.kto/config.json` or rerun init.
 
-```
-kto/
-├── agents/                         # AI-Agenten-Definitionen (Markdown)
-│   ├── kto-project-mapper.md       # Repo-Scanner
-│   ├── kto-graph-builder.md        # Semantisches Modell
-│   ├── kto-obsidian-sync.md        # Vault-Schreiber
-│   └── kto-change-detector.md      # Inkrementelles Update
-│
-├── commands/kto/                   # Slash-Commands (Markdown)
-│   ├── init.md                     # /kto:init
-│   ├── analyze.md                  # /kto:analyze
-│   ├── sync.md                     # /kto:sync
-│   └── diff.md                     # /kto:diff
-│
-├── src/                            # TypeScript-Quellcode
-│   ├── types.ts                    # Knowledge-Model-Typen
-│   ├── config.ts                   # Konfigurationsloader
-│   ├── knowledge-validator.ts      # Validierung
-│   └── index.ts                    # KtoRunner + öffentliche API
-│
-├── tests/                          # Tests (Vitest)
-├── bin/
-│   └── install.cjs                 # Installations-Script
-│
-├── package.json
-├── tsconfig.json
-└── vitest.config.ts
-```
+- **`enriched_knowledge.json` missing for diff/sync**
+  - Run analyze first.
 
----
+- **Unexpected artifact location**
+  - Check `.kto/config.json -> output_dir`; all JSON artifacts follow this setting.
 
-## Häufige Probleme
+- **OpenCode command not found**
+  - OpenCode commands are installed as `/kto-init`, `/kto-analyze`, `/kto-diff`, `/kto-sync` (hyphen form).
 
-### "kto is not initialized. Run /kto:init first."
+## Development notes
 
-Die `.kto/config.json` fehlt im aktuellen Verzeichnis. Stelle sicher dass du im richtigen Projekt-Root bist und führe `/kto:init` aus.
-
-### "vault_path is not set. Run /kto:init to configure."
-
-Die config.json existiert, aber `vault_path` ist leer. Führe `/kto:init` erneut aus und gib den Vault-Pfad an.
-
-### Obsidian zeigt keine neuen Notizen
-
-- Stelle sicher dass der `obsidian_subfolder` im Vault korrekt ist (Groß-/Kleinschreibung beachten)
-- Starte Obsidian neu oder führe "Reload vault" aus (Obsidian cached manchmal das Dateisystem)
-- Prüfe mit `ls "dein-vault-pfad/Projects/MY-APP"` ob die Dateien wirklich angelegt wurden
-
-### `/kto:diff` findet keine Änderungen
-
-- Das Projekt braucht Git (kto nutzt `git diff` zur Erkennung)
-- Alternative: Dateipfade explizit angeben: `/kto:diff src/meine-datei.ts`
-
-### Meine eigenen Notizen wurden überschrieben
-
-Das sollte nicht passieren, da kto nur den AUTO-GENERATED-Block ersetzt. Falls doch etwas verloren gegangen ist:
-- Prüfe ob du Inhalte innerhalb der `<!-- AUTO-GENERATED START/END -->` Markierungen geschrieben hast
-- Schreibe eigene Notizen immer **außerhalb** dieser Blöcke (am Ende der Datei oder darunter)
-
-### Node.js-Version zu alt
-
-```bash
-node --version  # Muss ≥ 18.0.0 sein
-```
-
-Mit `nvm`: `nvm install 18 && nvm use 18`
-
-### OpenCode findet die Commands nicht
-
-Prüfe den Config-Pfad:
-```bash
-ls ~/.config/opencode/commands/ | grep kto
-```
-
-Falls leer: `node bin/install.cjs --opencode` erneut ausführen.
-
----
-
-## Lizenz
-
-MIT
+- Core config types/validation: `src/config.ts`
+- Programmatic API runner: `src/index.ts`
+- Slash command definitions: `commands/kto/*.md`
+- Agent definitions: `agents/*.md`
