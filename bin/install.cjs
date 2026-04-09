@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-// kto-cc installer
-// Works as both npx kto-cc@latest  AND  postinstall script
+// kto installer
+// Primary entrypoint for curl/GitHub installer and manual local execution
 
 const fs   = require('fs');
 const path = require('path');
@@ -44,26 +44,26 @@ if (hasHelp) {
   ${c.bold}kto-cc${c.reset} v${pkg.version} — Knowledge to Obsidian
 
   ${c.yellow}Usage:${c.reset}
-    npx kto-cc@latest                 Interactive install
-    npx kto-cc@latest --claude        Claude Code only
-    npx kto-cc@latest --opencode      OpenCode only
-    npx kto-cc@latest --both          Both runtimes
-    npx kto-cc@latest --global        Skip location prompt (global)
-    npx kto-cc@latest --local         Install into current project only
-    npx kto-cc@latest --uninstall     Remove kto files
+    node bin/install.cjs                 Interactive install
+    node bin/install.cjs --claude        Claude Code only
+    node bin/install.cjs --opencode      OpenCode only
+    node bin/install.cjs --both          Both runtimes
+    node bin/install.cjs --global        Skip location prompt (global)
+    node bin/install.cjs --local         Install into current project only
+    node bin/install.cjs --uninstall     Remove kto files
 
   ${c.yellow}Examples:${c.reset}
     ${c.dim}# Interactive (recommended)${c.reset}
-    npx kto-cc@latest
+    node bin/install.cjs
 
     ${c.dim}# Claude Code, globally${c.reset}
-    npx kto-cc@latest --claude --global
+    node bin/install.cjs --claude --global
 
     ${c.dim}# OpenCode, globally${c.reset}
-    npx kto-cc@latest --opencode --global
+    node bin/install.cjs --opencode --global
 
     ${c.dim}# Both runtimes, globally${c.reset}
-    npx kto-cc@latest --both --global
+    node bin/install.cjs --both --global
 `);
   process.exit(0);
 }
@@ -304,7 +304,6 @@ function ask(rl, question) {
 
 function promptRuntime(callback) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  rl.on('close', () => process.exit(0));
 
   console.log(`  ${c.yellow}Which runtime(s) would you like to install for?${c.reset}\n
   ${c.cyan}1${c.reset}) Claude Code  ${c.dim}(~/.claude)${c.reset}
@@ -324,7 +323,6 @@ function promptRuntime(callback) {
 
 function promptLocation(runtimes, callback) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  rl.on('close', () => process.exit(0));
 
   console.log(`\n  ${c.yellow}Install globally or into current project?${c.reset}\n
   ${c.cyan}1${c.reset}) Global ${c.dim}(recommended — available in all projects)${c.reset}

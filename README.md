@@ -23,39 +23,51 @@ For day-to-day updates, it also provides a **Change Detector** fast path (`diff`
 
 ## Installation
 
-### Recommended (npx)
+### Recommended (curl installer)
 
 ```bash
-npx kto-cc@latest
+bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh)
 ```
 
 Flags:
 
-- `--claude` (Claude Code only)
-- `--opencode` (OpenCode only)
-- `--both` / `--all`
-- `--global` / `-g`
-- `--local` / `-l`
-- `--uninstall` / `-u`
-- `--help` / `-h`
+- Interactive installer prompts for runtime and location.
+- Run `bash <(curl -fsSL ... ) -- --help` to view installer flags.
 
 Examples:
 
 ```bash
 # Claude Code globally
-npx kto-cc@latest --claude --global
+bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh) -- --claude --global
 
 # OpenCode globally
-npx kto-cc@latest --opencode --global
+bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh) -- --opencode --global
 
 # Both globally
-npx kto-cc@latest --both --global
+bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh) -- --both --global
 ```
 
-### Alternative (curl installer)
+### Alternative (manual from GitHub)
+
+Clone the repository and run the installer directly:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/aaronjoeldev/knowledge-to-obsidian/main/install.sh)
+git clone https://github.com/aaronjoeldev/knowledge-to-obsidian.git
+cd knowledge-to-obsidian
+node bin/install.cjs
+```
+
+Common manual examples:
+
+```bash
+# Claude Code globally
+node bin/install.cjs --claude --global
+
+# OpenCode globally
+node bin/install.cjs --opencode --global
+
+# Both globally
+node bin/install.cjs --both --global
 ```
 
 ## What gets installed
