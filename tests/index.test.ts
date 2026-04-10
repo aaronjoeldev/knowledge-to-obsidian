@@ -14,6 +14,83 @@ import { KtoRunner } from '../src/index.js';
 
 const TMP_DIR = '/tmp/kto-runner-test';
 
+function validEnrichedGraph() {
+  return {
+    project: {
+      id: 'PROJECT-XYZ',
+      name: 'KTO Test Project',
+      description: 'Fixture graph for runner tests.',
+      domain: 'tooling',
+      criticality: 'medium',
+    },
+    features: [
+      {
+        id: 'FEAT-001',
+        name: 'Auth',
+        description: 'Handles authentication.',
+        status: 'implemented',
+        entry_points: ['src/auth/index.ts'],
+        modules: ['MODULE-Auth'],
+        third_parties: ['THIRD-Indexer'],
+        security_impact: 'high',
+        wiki: {
+          source_refs: [{ path: 'src/auth/index.ts' }],
+          last_verified: '2026-04-10T10:00:00Z',
+          page_target: 'Overview.md',
+        },
+      },
+    ],
+    modules: [
+      {
+        id: 'MODULE-Auth',
+        path: 'src/auth/index.ts',
+        language: 'typescript',
+        responsibility: 'Auth logic.',
+        exports: ['login'],
+        dependencies: [],
+        used_by_features: ['FEAT-001'],
+        wiki: {
+          source_refs: [{ path: 'src/auth/index.ts' }],
+          last_verified: '2026-04-10T10:00:00Z',
+          page_target: 'Architecture.md',
+        },
+      },
+      {
+        id: 'MODULE-RunLog',
+        path: 'src/api/run-log/route.ts',
+        language: 'typescript',
+        responsibility: 'Exposes an API route for sync run logs.',
+        exports: [],
+        dependencies: [],
+        used_by_features: [],
+        wiki: {
+          source_refs: [{ path: 'src/api/run-log/route.ts' }],
+          last_verified: '2026-04-10T10:00:00Z',
+          page_target: 'Run_Log.md',
+        },
+      },
+    ],
+    third_parties: [
+      {
+        id: 'THIRD-Indexer',
+        name: 'Indexer',
+        type: 'search',
+        data_access: [],
+        criticality: 'low',
+        used_in: ['FEAT-001'],
+        wiki: {
+          source_refs: [{ path: 'src/auth/index.ts' }],
+          last_verified: '2026-04-10T10:00:00Z',
+          page_target: 'Index.md',
+        },
+      },
+    ],
+    technologies: [],
+    security: { threats: [], pii_flows: [], auth_model: 'JWT' },
+    relations: [{ from: 'FEAT-001', to: 'MODULE-Auth', type: 'implemented_by' }],
+  };
+}
+
 function successStream() {
   return {
     async *[Symbol.asyncIterator]() {
@@ -51,7 +128,7 @@ describe('KtoRunner model validation', () => {
     );
     writeFileSync(
       join(TMP_DIR, '.kto', 'enriched_knowledge.json'),
-      JSON.stringify({ features: [], modules: [] }),
+      JSON.stringify(validEnrichedGraph()),
     );
 
     queryMock.mockImplementation(() => successStream());
@@ -76,7 +153,7 @@ describe('KtoRunner model validation', () => {
     );
     writeFileSync(
       join(TMP_DIR, '.kto', 'enriched_knowledge.json'),
-      JSON.stringify({ features: [], modules: [] }),
+      JSON.stringify(validEnrichedGraph()),
     );
 
     queryMock.mockImplementation(({ options }: { options: { model: string } }) => {
@@ -131,7 +208,7 @@ describe('KtoRunner model validation', () => {
     );
     writeFileSync(
       join(TMP_DIR, '.kto', 'enriched_knowledge.json'),
-      JSON.stringify({ features: [], modules: [] }),
+      JSON.stringify(validEnrichedGraph()),
     );
 
     queryMock.mockImplementation(({ options }: { options: { model?: string } }) => {
@@ -160,7 +237,7 @@ describe('KtoRunner model validation', () => {
     );
     writeFileSync(
       join(TMP_DIR, '.kto', 'enriched_knowledge.json'),
-      JSON.stringify({ features: [], modules: [] }),
+      JSON.stringify(validEnrichedGraph()),
     );
 
     queryMock.mockImplementation(() => successStream());
@@ -240,6 +317,34 @@ describe('KtoRunner model validation', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/targetPath/i);
+    expect(queryMock).not.toHaveBeenCalled();
+  });
+
+  it('returns failure when enriched_knowledge.json violates graph contract', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+        agents: { obsidian_sync: 'inherit' },
+      }),
+    );
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'enriched_knowledge.json'),
+      JSON.stringify({
+        ...validEnrichedGraph(),
+        features: [{ ...validEnrichedGraph().features[0], description: 'unknown' }],
+      }),
+    );
+
+    queryMock.mockImplementation(() => successStream());
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR });
+    const result = await runner.sync();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Invalid enriched knowledge graph/i);
+    expect(result.error).toMatch(/placeholder/i);
     expect(queryMock).not.toHaveBeenCalled();
   });
 });

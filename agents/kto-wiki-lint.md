@@ -24,12 +24,28 @@ Check existence and readability of first-class pages:
 - `Index.md`
 - `Run_Log.md`
 
-If missing, emit errors.
+If any core page is missing or unreadable, emit a **blocking error** and set `pass=false`.
 </step>
 
 <step name="validate_targets_and_links">
 For each feature/module/third_party with `wiki.page_target`, verify target file exists under vault subfolder.
 Validate index links point to existing generated pages.
+
+Validate semantic references for consistency:
+- Feature notes must keep `modules` and `third_parties` references consistent with the represented wiki entities.
+- If a feature note mentions a known third party (e.g. "Supabase"), require a matching third-party reference or emit at least a warning.
+- Third-party `used_in` feature links and feature `third_parties` links must be bidirectionally consistent.
+- Security-threat references must point to existing module notes/entities.
+
+Additionally, `Index.md` must include links to all root notes:
+- `[[Overview]]`
+- `[[Architecture]]`
+- `[[Index]]`
+- `[[Run_Log]]`
+- `[[Facts]]`
+- `[[Technology]]`
+
+Missing root-note links in `Index.md` are **blocking errors**.
 </step>
 
 <step name="validate_run_log">
@@ -59,6 +75,7 @@ At minimum, scan generated sections for known legacy tokens and emit findings (w
 - `PII-Inventar`
 - `Keine Beschreibung verfügbar`
 - `Noch nicht analysiert`
+- `nicht verfügbar`
 
 If any token appears inside an AUTO-GENERATED block, report it as at least a warning and include page path + token in the report.
 </step>

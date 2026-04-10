@@ -9,15 +9,25 @@ export type RelationType =
   | 'exposes'
   | 'owned_by';
 
+export const CRITICALITY_VALUES = ['low', 'medium', 'high'] as const;
+export const FEATURE_STATUS_VALUES = ['planned', 'implemented'] as const;
+export const RELATION_TYPE_VALUES = [
+  'implemented_by',
+  'depends_on',
+  'uses',
+  'exposes',
+  'owned_by',
+] as const;
+
 export interface KnowledgeSourceRef {
   path: string;
   symbol?: string;
 }
 
 export interface KnowledgeWikiMeta {
-  source_refs?: KnowledgeSourceRef[];
-  last_verified?: string; // ISO-8601 timestamp
-  page_target?: string; // Relative Obsidian target (e.g. "Features/FEAT-001_Auth.md")
+  source_refs: KnowledgeSourceRef[];
+  last_verified: string; // ISO-8601 timestamp
+  page_target: string; // Relative Obsidian target (e.g. "Features/FEAT-001_Auth.md")
 }
 
 // ─── Core entities ────────────────────────────────────────────────────────────
@@ -40,7 +50,7 @@ export interface KnowledgeFeature {
   third_parties: string[]; // References THIRD-* ids
   security_impact: Criticality;
   how_it_works?: string;
-  wiki?: KnowledgeWikiMeta;
+  wiki: KnowledgeWikiMeta;
 }
 
 export interface KnowledgeModule {
@@ -51,7 +61,7 @@ export interface KnowledgeModule {
   exports: string[];
   dependencies: string[]; // MODULE-* or THIRD-* ids
   used_by_features: string[]; // FEAT-* ids
-  wiki?: KnowledgeWikiMeta;
+  wiki: KnowledgeWikiMeta;
 }
 
 export interface KnowledgeThirdParty {
@@ -63,7 +73,7 @@ export interface KnowledgeThirdParty {
   used_in: string[]; // FEAT-* ids
   description?: string;
   usage_in_project?: string;
-  wiki?: KnowledgeWikiMeta;
+  wiki: KnowledgeWikiMeta;
 }
 
 export interface KnowledgeTechnology {
@@ -79,7 +89,9 @@ export interface KnowledgeSecurityThreat {
   affected_modules: string[];
   severity: Criticality;
   mitigation: string;
-  evidence?: string;
+  evidence: string;
+  source_refs: KnowledgeSourceRef[];
+  last_verified: string; // ISO-8601 timestamp
 }
 
 export interface KnowledgeSecurity {

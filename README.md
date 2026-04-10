@@ -9,7 +9,7 @@ kto installs runtime commands/agents for **Claude Code** and **OpenCode**. Insid
 kto provides a 3-phase wiki pipeline:
 
 1. **Analyze (Mapper + Graph Builder)** → scans source and builds `{output_dir}/knowledge.json` + `{output_dir}/enriched_knowledge.json`
-2. **Sync/Lint** → updates vault pages (including Overview/Architecture/Index/Run_Log) and validates wiki coherence
+2. **Sync/Lint** → updates vault pages (including mandatory Overview/Architecture/Index/Run_Log core pages) and validates wiki coherence (missing core pages or missing root-note links in `Index.md` are blocking lint errors)
 3. **Query (opt-in writeback)** → generates deterministic answers from the wiki and optionally writes audited updates
 
 For day-to-day updates, it also provides a **Change Detector** fast path (`diff`) that updates only affected entities while keeping index/log consistency and avoiding unnecessary synthesis-page regeneration.

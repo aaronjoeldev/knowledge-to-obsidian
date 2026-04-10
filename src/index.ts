@@ -17,6 +17,8 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig, type KtoAgentsConfig, type KtoConfig } from './config.js';
+import { validateKnowledgeGraph } from './knowledge-validator.js';
+import type { KnowledgeGraph } from './types.js';
 
 type AgentConfigKey = keyof KtoAgentsConfig;
 
@@ -115,6 +117,20 @@ export class KtoRunner {
       cwd: this.projectDir,
     });
 
+    try {
+      await this.assertEnrichedKnowledgeGraphValid(config);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        filesScanned: 0,
+        featuresFound: 0,
+        modulesFound: 0,
+        notesWritten: 0,
+        error: msg,
+      };
+    }
+
     await this.runAgent(resolvedContexts['kto-obsidian-sync']!, {
       task: 'sync enriched wiki knowledge graph to obsidian vault',
       cwd: this.projectDir,
@@ -128,6 +144,20 @@ export class KtoRunner {
     const config = await loadConfig(this.projectDir, { requireVault: true });
     this.resolvedModelCache.clear();
     const resolvedContexts = await this.resolveModelsForAgents(config, ['kto-obsidian-sync']);
+
+    try {
+      await this.assertEnrichedKnowledgeGraphValid(config);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        filesScanned: 0,
+        featuresFound: 0,
+        modulesFound: 0,
+        notesWritten: 0,
+        error: msg,
+      };
+    }
 
     await this.runAgent(resolvedContexts['kto-obsidian-sync']!, {
       task: 'sync enriched wiki knowledge graph to obsidian vault',
@@ -523,12 +553,39 @@ export class KtoRunner {
     };
   }
 
-  private async buildResult(config: KtoConfig): Promise<KtoPipelineResult> {
+  private async loadEnrichedKnowledgeGraph(config: KtoConfig): Promise<{ path: string; graph: KnowledgeGraph }> {
     const paths = this.resolvePaths(config);
+    const raw = await readFile(paths.enrichedKnowledgePath, 'utf-8');
+    return {
+      path: paths.enrichedKnowledgePath,
+      graph: JSON.parse(raw) as KnowledgeGraph,
+    };
+  }
 
+  private async assertEnrichedKnowledgeGraphValid(config: KtoConfig): Promise<void> {
+    const { path, graph } = await this.loadEnrichedKnowledgeGraph(config);
+    const validation = validateKnowledgeGraph(graph);
+
+    if (!validation.valid) {
+      throw new Error(`Invalid enriched knowledge graph at ${path}: ${validation.errors.join('; ')}`);
+    }
+  }
+
+  private async buildResult(config: KtoConfig): Promise<KtoPipelineResult> {
     try {
-      const raw = await readFile(paths.enrichedKnowledgePath, 'utf-8');
-      const graph = JSON.parse(raw) as { features?: unknown[]; modules?: unknown[] };
+      const { path, graph } = await this.loadEnrichedKnowledgeGraph(config);
+
+      const validation = validateKnowledgeGraph(graph);
+      if (!validation.valid) {
+        return {
+          success: false,
+          filesScanned: 0,
+          featuresFound: 0,
+          modulesFound: 0,
+          notesWritten: 0,
+          error: `Invalid enriched knowledge graph at ${path}: ${validation.errors.join('; ')}`,
+        };
+      }
 
       if (!Array.isArray(graph.features) || !Array.isArray(graph.modules)) {
         return {
@@ -537,7 +594,7 @@ export class KtoRunner {
           featuresFound: 0,
           modulesFound: 0,
           notesWritten: 0,
-          error: `Invalid enriched knowledge format at ${paths.enrichedKnowledgePath}: expected features/modules arrays`,
+          error: `Invalid enriched knowledge format at ${path}: expected features/modules arrays`,
         };
       }
 
@@ -549,6 +606,7 @@ export class KtoRunner {
         notesWritten: 0,
       };
     } catch (err) {
+      const paths = this.resolvePaths(config);
       const msg = err instanceof Error ? err.message : String(err);
       return {
         success: false,

@@ -14,6 +14,7 @@ import type {
   FeatureStatus,
   Criticality,
 } from '../src/types.js';
+import { CRITICALITY_VALUES, FEATURE_STATUS_VALUES, RELATION_TYPE_VALUES } from '../src/types.js';
 
 describe('Knowledge Model Types', () => {
   it('KnowledgeProject has required fields', () => {
@@ -59,6 +60,8 @@ describe('Knowledge Model Types', () => {
       dependencies: ['THIRD-Auth0'],
       used_by_features: ['FEAT-001'],
       wiki: {
+        source_refs: [{ path: 'services/auth/index.ts' }],
+        last_verified: '2026-04-10T10:00:00Z',
         page_target: 'Code_Map/MODULE-AuthService.md',
       },
     };
@@ -127,6 +130,11 @@ describe('Knowledge Model Types', () => {
       third_parties: ['THIRD-Stripe'],
       security_impact: 'high',
       how_it_works: 'The checkout route creates a Stripe session and redirects the user.',
+      wiki: {
+        source_refs: [{ path: 'src/features/billing.ts' }],
+        last_verified: '2026-04-10T10:00:00Z',
+        page_target: 'Features/FEAT-002_Billing.md',
+      },
     };
     expect(feature.how_it_works).toBe('The checkout route creates a Stripe session and redirects the user.');
   });
@@ -141,6 +149,11 @@ describe('Knowledge Model Types', () => {
       modules: [],
       third_parties: [],
       security_impact: 'low',
+      wiki: {
+        source_refs: [{ path: 'src/features/search.ts' }],
+        last_verified: '2026-04-10T10:00:00Z',
+        page_target: 'Features/FEAT-003_Search.md',
+      },
     };
     expect(feature.how_it_works).toBeUndefined();
   });
@@ -157,6 +170,8 @@ describe('Knowledge Model Types', () => {
       usage_in_project: 'Used for email/password auth and session management via SSR cookies.',
       wiki: {
         source_refs: [{ path: 'src/lib/supabase.ts' }],
+        last_verified: '2026-04-10T10:00:00Z',
+        page_target: 'Third_Party/THIRD-Supabase.md',
       },
     };
     expect(tp.description).toContain('Firebase');
@@ -175,7 +190,7 @@ describe('Knowledge Model Types', () => {
     expect(security.authorization_model).toContain('Row Level Security');
   });
 
-  it('KnowledgeSecurityThreat accepts optional evidence field', () => {
+  it('KnowledgeSecurityThreat includes mandatory provenance and evidence fields', () => {
     const threat: KnowledgeSecurityThreat = {
       id: 'THREAT-001',
       description: 'Login endpoint has no rate limiting, enabling credential stuffing.',
@@ -183,7 +198,15 @@ describe('Knowledge Model Types', () => {
       severity: 'high',
       mitigation: 'Add upstash/ratelimit middleware on the login route.',
       evidence: 'app/(auth)/login/page.tsx — no rate-limit call before supabase.auth.signInWithPassword()',
+      source_refs: [{ path: 'app/(auth)/login/page.tsx' }],
+      last_verified: '2026-04-10T10:00:00Z',
     };
     expect(threat.evidence).toContain('signInWithPassword');
+  });
+
+  it('exports runtime enum value lists', () => {
+    expect(CRITICALITY_VALUES).toEqual(['low', 'medium', 'high']);
+    expect(FEATURE_STATUS_VALUES).toEqual(['planned', 'implemented']);
+    expect(RELATION_TYPE_VALUES).toContain('implemented_by');
   });
 });

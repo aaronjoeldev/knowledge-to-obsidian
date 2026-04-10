@@ -144,14 +144,105 @@ generated_by: kto
 </step>
 
 <step name="write_core_wiki_pages">
-Write/update first-class pages:
+MANDATORY: create or update all four core pages on every sync run. Missing any core page is a sync failure.
 
-- `Overview.md`: concise project summary, scope, and current wiki freshness (`enriched_at`)
-- `Architecture.md`: high-level architecture synthesis grounded in graph data
-- `Index.md`: canonical navigation page linking Facts, Technology, Features_Index, Modules_Index, Security_Overview
-- `Run_Log.md`: append/update deterministic run entry containing timestamp, entity counts, and what changed in this sync
+Required files:
+- `Overview.md`
+- `Architecture.md`
+- `Index.md`
+- `Run_Log.md`
 
-All four files must follow AUTO-GENERATED block protocol.
+All templates and generated defaults MUST be English-only.
+
+Use these deterministic templates inside AUTO-GENERATED blocks:
+
+`Overview.md`
+```markdown
+# Overview — {project.name}
+
+<!-- AUTO-GENERATED START -->
+## Scope
+- Project: `{project.id}`
+- Domain: {project.domain}
+- Criticality: {project.criticality}
+
+## Freshness
+- Last graph sync: {enriched_at}
+
+## Primary Notes
+- [[Facts]]
+- [[Architecture]]
+- [[Index]]
+- [[Run_Log]]
+<!-- AUTO-GENERATED END -->
+```
+
+`Architecture.md`
+```markdown
+# Architecture — {project.name}
+
+<!-- AUTO-GENERATED START -->
+## System Summary
+{Synthesize 3–5 sentences strictly from graph data.}
+
+## Core Building Blocks
+- Modules: {modules.length}
+- Features: {features.length}
+- Third Parties: {third_parties.length}
+
+## Related Notes
+- [[Technology]]
+- [[Code_Map/Modules_Index]]
+- [[Security/Security_Overview]]
+<!-- AUTO-GENERATED END -->
+```
+
+`Index.md`
+```markdown
+# Index — {project.name}
+
+<!-- AUTO-GENERATED START -->
+## Root Notes
+- [[Overview]]
+- [[Architecture]]
+- [[Index]]
+- [[Run_Log]]
+- [[Facts]]
+- [[Technology]]
+
+## Entity Indexes
+- [[Features/Features_Index]]
+- [[Code_Map/Modules_Index]]
+- [[Security/Security_Overview]]
+
+*Last synced: {enriched_at}*
+<!-- AUTO-GENERATED END -->
+```
+
+`Run_Log.md`
+```markdown
+# Run Log — {project.name}
+
+<!-- AUTO-GENERATED START -->
+## Latest Sync
+- Timestamp: {enriched_at}
+- Version: {version}
+- Features: {features.length}
+- Modules: {modules.length}
+- Third Parties: {third_parties.length}
+- Technologies: {technologies.length}
+
+## Validation Warnings
+{if warnings.length > 0:
+  {for each warning: - {warning}}
+else:
+  - None
+}
+
+## Change Summary
+{Deterministic bullet list of generated/updated pages in this run.}
+<!-- AUTO-GENERATED END -->
+```
 </step>
 
 <step name="write_technology_md">
@@ -203,6 +294,8 @@ generated_by: kto
 <!-- AUTO-GENERATED START -->
 **Status:** {feature.status}
 **Security Impact:** {feature.security_impact}
+**Source Refs:** {for each ref in feature.wiki.source_refs: - `{ref.path}`}
+**Last Verified:** {feature.wiki.last_verified}
 
 ## What It Does
 
@@ -238,13 +331,32 @@ If none: "_No known threats for this feature._"
 {for each relation where from == feature.id or to == feature.id:
 - {from} --{type}--> {to}}
 
+## Provenance
+
+Source: {feature.wiki.source_refs.map(ref => ref.path).join(', ')} | Verified: {feature.wiki.last_verified}
+
 *Last synced: {enriched_at}*
 <!-- AUTO-GENERATED END -->
 ```
 </step>
 
 <step name="write_module_notes">
-For each module in `modules[]`, write `Code_Map/{module.id}.md`:
+Only create standalone module notes for **high-signal modules**.
+
+High-signal modules:
+- API routes / route handlers / controllers
+- Services / orchestrators with clear business responsibility
+- Integrations (providers, adapters, gateways, external clients)
+- Security-relevant modules (auth/authz/session/token/encryption)
+- Shared modules that are reused by multiple features
+
+Low-signal modules (do **not** create dedicated module notes):
+- Generic catch-all folders (e.g. `src/modules`, `src/shared`, `src/utils`)
+- Responsibility text like "Application logic grouped under ...", "Various utilities", or similarly unclear scope
+
+For low-signal modules, include them under the related feature notes as a grouped list ("Supporting Modules") or include them in a short summary list inside `Code_Map/Modules_Index.md`.
+
+For each high-signal module, write `Code_Map/{module.id}.md`:
 
 ```markdown
 ---
@@ -296,6 +408,8 @@ generated_by: kto
 <!-- AUTO-GENERATED START -->
 **Type:** {tp.type}
 **Criticality:** {tp.criticality}
+**Source Refs:** {for each ref in tp.wiki.source_refs: - `{ref.path}`}
+**Last Verified:** {tp.wiki.last_verified}
 
 ## Purpose
 
@@ -325,6 +439,10 @@ If none: "_No known security threats for this library._"
 
 {for each feat_id in tp.used_in: - [[{feat_id}]]}
 
+## Provenance
+
+Source: {tp.wiki.source_refs.map(ref => ref.path).join(', ')} | Verified: {tp.wiki.last_verified}
+
 *Last synced: {enriched_at}*
 <!-- AUTO-GENERATED END -->
 ```
@@ -351,11 +469,17 @@ Modules Index:
 # Modules Index — {project.name}
 
 <!-- AUTO-GENERATED START -->
+## High-Signal Modules
+
 | ID | Path | Language | Responsibility |
 |----|------|----------|---------------|
-{for each module: | [[{id}]] | `{path}` | {language} | {responsibility} |}
+{for each high-signal module: | [[{id}]] | `{path}` | {language} | {responsibility} |}
 
-*{modules.length} modules · Last synced: {enriched_at}*
+## Low-Signal Modules (Grouped)
+
+{for each low-signal module: - `{path}` — {responsibility}}
+
+*{high_signal_modules.length} high-signal modules · {low_signal_modules.length} low-signal modules · Last synced: {enriched_at}*
 <!-- AUTO-GENERATED END -->
 ```
 </step>
@@ -398,7 +522,12 @@ generated_by: kto
 **Affected Modules:** {threat.affected_modules.map(m => `[[${m}]]`).join(', ')}
 
 **Evidence:**
-{threat.evidence if present, else: "_No specific code evidence documented._"}
+{threat.evidence}
+
+**Source Refs:**
+{for each ref in threat.source_refs: - `{ref.path}`}
+
+**Last Verified:** {threat.last_verified}
 
 **Mitigation:**
 {threat.mitigation if non-empty, else: "_No mitigation documented._"}
@@ -422,6 +551,10 @@ For each non-empty category:
 
 If pii_flows is empty: "_No PII flows identified._"
 }
+
+## Provenance
+
+Source: {security.threats.flatMap(t => t.source_refs.map(ref => ref.path)).join(', ')} | Verified: {max(security.threats.map(t => t.last_verified))}
 
 *Last synced: {enriched_at}*
 <!-- AUTO-GENERATED END -->
