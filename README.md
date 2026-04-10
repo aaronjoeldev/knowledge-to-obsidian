@@ -1,18 +1,18 @@
 # kto — Knowledge to Obsidian
 
-Turn a code repository into a structured Obsidian knowledge base.
+Turn a code repository into a persistent, auditable Obsidian wiki for your codebase.
 
-kto installs runtime commands/agents for **Claude Code** and **OpenCode**. Inside a project, it uses `.kto/config.json` to analyze your codebase, build a knowledge graph, and sync markdown notes into your Obsidian vault.
+kto installs runtime commands/agents for **Claude Code** and **OpenCode**. Inside a project, it uses `.kto/config.json` to run a deterministic wiki pipeline: analyze your codebase, build a knowledge graph, sync markdown pages, keep index/run-log coherence, and support query-driven writeback when explicitly enabled.
 
 ## What this tool is
 
-kto provides a 3-step pipeline:
+kto provides a 3-phase wiki pipeline:
 
-1. **Project Mapper** → scans repository structure into `{output_dir}/knowledge.json`
-2. **Graph Builder** → builds semantic graph into `{output_dir}/enriched_knowledge.json`
-3. **Obsidian Sync** → writes/updates notes in your vault
+1. **Analyze (Mapper + Graph Builder)** → scans source and builds `{output_dir}/knowledge.json` + `{output_dir}/enriched_knowledge.json`
+2. **Sync/Lint** → updates vault pages (including Overview/Architecture/Index/Run_Log) and validates wiki coherence
+3. **Query (opt-in writeback)** → generates deterministic answers from the wiki and optionally writes audited updates
 
-For day-to-day updates, it also provides a **Change Detector** fast path (`diff`) that updates only affected entities.
+For day-to-day updates, it also provides a **Change Detector** fast path (`diff`) that updates only affected entities while keeping index/log consistency and avoiding unnecessary synthesis-page regeneration.
 
 ## Requirements
 
@@ -128,12 +128,16 @@ Claude Code command names use `:`. OpenCode uses `-`.
 | Full analysis pipeline | `/kto:analyze` | `/kto-analyze` |
 | Incremental update | `/kto:diff [files...]` | `/kto-diff [files...]` |
 | Vault sync from existing graph | `/kto:sync` | `/kto-sync` |
+| Wiki lint/coherence check | `/kto:lint` | `/kto-lint` |
+| Query wiki (+ optional writeback) | `/kto:query "question"` | `/kto-query "question"` |
 
 When to use what:
 
 - **analyze**: first run, large refactors, or when you need a clean rebuild
 - **diff**: regular development after code changes
 - **sync**: regenerate vault notes from existing `enriched_knowledge.json` only
+- **lint**: validate wiki consistency (links/index/run-log/coherence) before or after sync
+- **query**: answer questions from wiki artifacts; writeback is explicit opt-in only
 
 `/kto:init` now uses a code-backed helper (`bin/kto-tools.cjs`) to detect provider signals and build defaults. It always shows the full provider picker, with detected/recommended options surfaced first. If you pick a non-Anthropic provider (Bedrock, Vertex, Foundry, OpenRouter, OpenAI/Codex, GLM/Z.AI), the safest default is usually `"inherit"` so kto follows the current runtime/provider model instead of forcing Anthropic model IDs.
 
@@ -164,7 +168,9 @@ Canonical shape:
     "project_mapper": "claude-haiku-4-5-20251001",
     "graph_builder": "claude-sonnet-4-6",
     "obsidian_sync": "claude-haiku-4-5-20251001",
-    "change_detector": "claude-haiku-4-5-20251001"
+    "change_detector": "claude-haiku-4-5-20251001",
+    "wiki_lint": "claude-haiku-4-5-20251001",
+    "query_writer": "claude-haiku-4-5-20251001"
   },
   "model_fallbacks": {
     "graph_builder": "inherit"
@@ -239,6 +245,8 @@ Typical embedding cases:
 - `runner.analyze()`
 - `runner.diff(changedFiles)`
 - `runner.sync()`
+- `runner.lint()`
+- `runner.queryWiki(question, { writeback?, targetPath? })`
 
 Example:
 
@@ -257,16 +265,23 @@ const result = await runner.analyze();
 if (!result.success) {
   console.error(result.error);
 }
+
+const queryResult = await runner.queryWiki('Summarize the authentication flow');
+if (!queryResult.success) {
+  console.error(queryResult.error);
+}
 ```
 
 ## Agent/model selection behavior
 
-There are 4 model slots in config:
+There are 6 model slots in config:
 
 - `project_mapper`
 - `graph_builder`
 - `obsidian_sync`
 - `change_detector`
+- `wiki_lint`
+- `query_writer`
 
 Important distinction:
 
@@ -290,6 +305,9 @@ Expected structure:
 
 ```text
 {obsidian_subfolder}/
+  Overview.md
+  Architecture.md
+  Index.md
   Facts.md
   Technology.md
   Features/
@@ -302,6 +320,8 @@ Expected structure:
     THIRD-*.md
   Security/
     Security_Overview.md
+  Operations/
+    Run_Log.md
 ```
 
 Sync safety model:
@@ -327,7 +347,7 @@ Sync safety model:
   - Check `.kto/config.json -> output_dir`; all JSON artifacts follow this setting.
 
 - **OpenCode command not found**
-  - OpenCode commands are installed as `/kto-init`, `/kto-analyze`, `/kto-diff`, `/kto-sync` (hyphen form).
+  - OpenCode commands are installed as `/kto-init`, `/kto-analyze`, `/kto-diff`, `/kto-sync`, `/kto-lint`, `/kto-query` (hyphen form).
 
 ## Development notes
 

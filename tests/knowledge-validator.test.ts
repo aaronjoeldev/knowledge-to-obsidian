@@ -24,6 +24,10 @@ const VALID_GRAPH: KnowledgeGraph = {
       modules: ['MODULE-Auth'],
       third_parties: [],
       security_impact: 'high',
+      wiki: {
+        source_refs: [{ path: 'src/auth/index.ts' }],
+        last_verified: '2026-04-10T10:00:00Z',
+      },
     },
   ],
   modules: [
@@ -35,6 +39,9 @@ const VALID_GRAPH: KnowledgeGraph = {
       exports: [],
       dependencies: [],
       used_by_features: ['FEAT-001'],
+      wiki: {
+        page_target: 'Code_Map/MODULE-Auth.md',
+      },
     },
   ],
   third_parties: [],

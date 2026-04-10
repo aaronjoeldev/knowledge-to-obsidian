@@ -8,6 +8,8 @@ export interface KtoAgentsConfig {
   graph_builder: string;
   obsidian_sync: string;
   change_detector: string;
+  wiki_lint: string;
+  query_writer: string;
 }
 
 export type KtoProvider =
@@ -59,6 +61,8 @@ export const CONFIG_DEFAULTS: KtoConfig = {
     graph_builder: 'claude-sonnet-4-6',
     obsidian_sync: 'claude-haiku-4-5-20251001',
     change_detector: 'claude-haiku-4-5-20251001',
+    wiki_lint: 'claude-haiku-4-5-20251001',
+    query_writer: 'claude-haiku-4-5-20251001',
   },
   model_fallbacks: {},
 };
@@ -194,6 +198,8 @@ function validateAndReturn(
     'graph_builder',
     'obsidian_sync',
     'change_detector',
+    'wiki_lint',
+    'query_writer',
   ];
 
   for (const field of agentFields) {

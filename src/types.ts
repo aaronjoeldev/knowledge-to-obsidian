@@ -9,6 +9,17 @@ export type RelationType =
   | 'exposes'
   | 'owned_by';
 
+export interface KnowledgeSourceRef {
+  path: string;
+  symbol?: string;
+}
+
+export interface KnowledgeWikiMeta {
+  source_refs?: KnowledgeSourceRef[];
+  last_verified?: string; // ISO-8601 timestamp
+  page_target?: string; // Relative Obsidian target (e.g. "Features/FEAT-001_Auth.md")
+}
+
 // ─── Core entities ────────────────────────────────────────────────────────────
 
 export interface KnowledgeProject {
@@ -29,6 +40,7 @@ export interface KnowledgeFeature {
   third_parties: string[]; // References THIRD-* ids
   security_impact: Criticality;
   how_it_works?: string;
+  wiki?: KnowledgeWikiMeta;
 }
 
 export interface KnowledgeModule {
@@ -39,6 +51,7 @@ export interface KnowledgeModule {
   exports: string[];
   dependencies: string[]; // MODULE-* or THIRD-* ids
   used_by_features: string[]; // FEAT-* ids
+  wiki?: KnowledgeWikiMeta;
 }
 
 export interface KnowledgeThirdParty {
@@ -50,6 +63,7 @@ export interface KnowledgeThirdParty {
   used_in: string[]; // FEAT-* ids
   description?: string;
   usage_in_project?: string;
+  wiki?: KnowledgeWikiMeta;
 }
 
 export interface KnowledgeTechnology {

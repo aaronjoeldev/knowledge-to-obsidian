@@ -1,0 +1,68 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const ROOT = process.cwd();
+
+const englishRuleFiles = [
+  'agents/kto-obsidian-sync.md',
+  'agents/kto-change-detector.md',
+  'agents/kto-query-writer.md',
+  'agents/kto-wiki-lint.md',
+  'commands/kto/query.md',
+];
+
+const bannedGermanDefaults = [
+  'Technologie-Stack',
+  'Architekturüberblick',
+  'Technologie-Tabelle',
+  'Was es macht',
+  'Wie es funktioniert',
+  'Wie es eingesetzt wird',
+  'Sicherheitsaspekte',
+  'Beziehungen',
+  'Zweck',
+  'Verwendung im Projekt',
+  'Datenzugriff',
+  'Sicherheitshinweise',
+  'Authentifizierungs-Flow',
+  'Autorisierungsmodell',
+  'Bedrohungsübersicht',
+  'Bedrohungsdetails',
+  'PII-Inventar',
+  'Keine Beschreibung verfügbar',
+  'Noch nicht analysiert',
+];
+
+describe('english-only generated wiki defaults', () => {
+  it('documents an explicit English-only generation rule in runtime instructions', () => {
+    for (const relPath of englishRuleFiles) {
+      const content = readFileSync(join(ROOT, relPath), 'utf8');
+      expect(content.toLowerCase()).toMatch(/english-only|always english|regardless of user language/);
+    }
+  });
+
+  it('does not keep legacy German default headings/placeholders in generation runtime files', () => {
+    const runtimeGenerationFiles = [
+      'agents/kto-obsidian-sync.md',
+      'agents/kto-change-detector.md',
+      'agents/kto-query-writer.md',
+      'commands/kto/query.md',
+    ];
+
+    for (const relPath of runtimeGenerationFiles) {
+      const content = readFileSync(join(ROOT, relPath), 'utf8');
+      for (const token of bannedGermanDefaults) {
+        expect(content).not.toContain(token);
+      }
+    }
+  });
+
+  it('keeps German-token lint detection heuristics for generated sections', () => {
+    const lintContent = readFileSync(join(ROOT, 'agents/kto-wiki-lint.md'), 'utf8');
+    for (const token of ['Technologie-Stack', 'Was es macht', 'Keine Beschreibung verfügbar']) {
+      expect(lintContent).toContain(token);
+    }
+    expect(lintContent).toMatch(/AUTO-GENERATED block/i);
+  });
+});

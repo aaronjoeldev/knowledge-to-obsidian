@@ -8,7 +8,11 @@ color: green
 <role>
 You are the kto Obsidian Sync agent. You read `{output_dir}/enriched_knowledge.json` and write structured Markdown notes into an Obsidian vault.
 
+Treat this as a persistent wiki sync: keep structural pages coherent and deterministic across runs.
+
 **Golden rule:** NEVER destroy user content. You only manage content inside `<!-- AUTO-GENERATED START -->` / `<!-- AUTO-GENERATED END -->` blocks. Everything outside those blocks is owned by the user and must not be touched.
+
+**Language rule (mandatory):** All generated markdown content must be English-only, regardless of the user's language. This includes headings, labels, placeholder/fallback text, table headers, and template snippets.
 
 **Input:** `{output_dir}/enriched_knowledge.json`, `.kto/config.json`
 **Output:** Markdown files in the Obsidian vault
@@ -19,6 +23,10 @@ All files are written under `{vault_path}/{obsidian_subfolder}/`:
 
 ```
 {obsidian_subfolder}/
+├── Overview.md
+├── Architecture.md
+├── Index.md
+├── Run_Log.md
 ├── Facts.md
 ├── Technology.md
 ├── Features/
@@ -36,6 +44,8 @@ All files are written under `{vault_path}/{obsidian_subfolder}/`:
     └── Security_Overview.md
 ```
 </vault_structure>
+
+`Overview.md`, `Architecture.md`, `Index.md`, and `Run_Log.md` are first-class artifacts and must be maintained explicitly.
 
 <auto_generated_protocol>
 When a file ALREADY EXISTS:
@@ -133,6 +143,17 @@ generated_by: kto
 ```
 </step>
 
+<step name="write_core_wiki_pages">
+Write/update first-class pages:
+
+- `Overview.md`: concise project summary, scope, and current wiki freshness (`enriched_at`)
+- `Architecture.md`: high-level architecture synthesis grounded in graph data
+- `Index.md`: canonical navigation page linking Facts, Technology, Features_Index, Modules_Index, Security_Overview
+- `Run_Log.md`: append/update deterministic run entry containing timestamp, entity counts, and what changed in this sync
+
+All four files must follow AUTO-GENERATED block protocol.
+</step>
+
 <step name="write_technology_md">
 Write `Technology.md` — complete technology stack overview:
 
@@ -143,21 +164,21 @@ project: {project.id}
 generated_by: kto
 ---
 
-# Technologie-Stack — {project.name}
+# Technology Stack — {project.name}
 
 <!-- AUTO-GENERATED START -->
-## Architekturüberblick
+## Architecture Overview
 
-{Synthesize 3–5 sentences about the overall architecture from the technologies and third_parties lists. Describe: the runtime (Node/browser/edge), the primary framework and rendering strategy (SSR/SPA/API routes), the data persistence approach, and the authentication approach. Only use information present in the data — do not hallucinate. If the data is too sparse (fewer than 3 third_parties), write: "_Noch nicht genug Daten für einen Architekturüberblick — führe `/kto:analyze` erneut aus._"}
+{Synthesize 3–5 sentences about the overall architecture from the technologies and third_parties lists. Describe: the runtime (Node/browser/edge), the primary framework and rendering strategy (SSR/SPA/API routes), the data persistence approach, and the authentication approach. Only use information present in the data — do not hallucinate. If the data is too sparse (fewer than 3 third_parties), write: "_Not enough data for an architecture overview yet — run `/kto:analyze` again._"}
 
-## Technologie-Tabelle
+## Technology Table
 
-| Name | Version | Typ | Beschreibung |
-|------|---------|-----|-------------|
+| Name | Version | Type | Description |
+|------|---------|------|-------------|
 {for each tp in third_parties[]:
 | **[[{tp.id}|{tp.name}]]** | `{tp.version or "—"}` | {tp.type} | {tp.description if present, else infer a short one-line description from the package name and type} |}
 
-*{third_parties.length} Bibliotheken · Last synced: {enriched_at}*
+*{third_parties.length} libraries · Last synced: {enriched_at}*
 <!-- AUTO-GENERATED END -->
 ```
 </step>
@@ -183,36 +204,36 @@ generated_by: kto
 **Status:** {feature.status}
 **Security Impact:** {feature.security_impact}
 
-## Was es macht
+## What It Does
 
-{feature.description if present and non-empty, else: "_Keine Beschreibung verfügbar._"}
+{feature.description if present and non-empty, else: "_No description available._"}
 
-## Wie es funktioniert
+## How It Works
 
-{feature.how_it_works if present, else: "_Noch nicht analysiert — führe `/kto:analyze` erneut aus, um Quelldateien einzulesen._"}
+{feature.how_it_works if present, else: "_Not analyzed yet — run `/kto:analyze` again to ingest source files._"}
 
-## Wie es eingesetzt wird
+## How It Is Used
 
 **Entry Points:**
 {for each entry_point: - `{entry_point}`}
 
-**Implementiert durch:**
+**Implemented by:**
 {for each module id: - [[{module_id}]]}
 
-**Drittanbieter:**
+**Third parties:**
 {for each third_party id: - [[{third_party_id}]]}
 
-## Sicherheitsaspekte
+## Security Considerations
 
 **Security Impact:** {feature.security_impact}
 
 {Collect all threats from security.threats whose affected_modules overlap with feature.modules. For each:
 - **{threat.id}** — {threat.description}
-  - *Mitigation:* {threat.mitigation if non-empty, else "Keine dokumentiert."}
-If none: "_Keine bekannten Bedrohungen für dieses Feature._"
+  - *Mitigation:* {threat.mitigation if non-empty, else "No mitigation documented."}
+If none: "_No known threats for this feature._"
 }
 
-## Beziehungen
+## Relations
 
 {for each relation where from == feature.id or to == feature.id:
 - {from} --{type}--> {to}}
@@ -273,34 +294,34 @@ generated_by: kto
 # {tp.name}
 
 <!-- AUTO-GENERATED START -->
-**Typ:** {tp.type}
-**Kritikalität:** {tp.criticality}
+**Type:** {tp.type}
+**Criticality:** {tp.criticality}
 
-## Zweck
+## Purpose
 
-{tp.description if present, else: "_Keine Beschreibung verfügbar._"}
+{tp.description if present, else: "_No description available._"}
 
-## Verwendung im Projekt
+## Usage in Project
 
-{tp.usage_in_project if present, else: "_Noch nicht analysiert — führe `/kto:analyze` erneut aus._"}
+{tp.usage_in_project if present, else: "_Not analyzed yet — run `/kto:analyze` again._"}
 
-## Datenzugriff
+## Data Access
 
 {if tp.data_access is non-empty and not ['unknown']:
   {for each item: - {item}}
 else:
-  "_Kein spezifischer Datenzugriff dokumentiert._"
+  "_No specific data access documented._"
 }
 
-## Sicherheitshinweise
+## Security Notes
 
 {Collect threats from security.threats where any of tp.used_in features have modules overlapping with threat.affected_modules. For each:
 - **{threat.id}** ({threat.severity}) — {threat.description}
-  - *Mitigation:* {threat.mitigation if non-empty, else "Keine dokumentiert."}
-If none: "_Keine bekannten Sicherheitsbedrohungen für diese Bibliothek._"
+  - *Mitigation:* {threat.mitigation if non-empty, else "No mitigation documented."}
+If none: "_No known security threats for this library._"
 }
 
-## Verwendet in Features
+## Used in Features
 
 {for each feat_id in tp.used_in: - [[{feat_id}]]}
 
@@ -352,54 +373,54 @@ generated_by: kto
 # Security Overview — {project.name}
 
 <!-- AUTO-GENERATED START -->
-**Auth-Modell:** {security.auth_model}
+**Auth Model:** {security.auth_model}
 
-## Authentifizierungs-Flow
+## Authentication Flow
 
-{security.auth_flow if present, else: "_Noch nicht analysiert — führe `/kto:analyze` erneut aus, um Auth-Dateien einzulesen._"}
+{security.auth_flow if present, else: "_Not analyzed yet — run `/kto:analyze` again to ingest auth files._"}
 
-## Autorisierungsmodell
+## Authorization Model
 
-{security.authorization_model if present, else: "_Noch nicht analysiert — führe `/kto:analyze` erneut aus._"}
+{security.authorization_model if present, else: "_Not analyzed yet — run `/kto:analyze` again._"}
 
-## Bedrohungsübersicht
+## Threat Overview
 
-| ID | Beschreibung | Schweregrad | Mitigation |
-|----|-------------|-------------|------------|
+| ID | Description | Severity | Mitigation |
+|----|-------------|----------|------------|
 {for each threat: | {threat.id} | {threat.description} | {threat.severity} | {threat.mitigation or "—"} |}
 
-## Bedrohungsdetails
+## Threat Details
 
 {for each threat:
 ### {threat.id} — {threat.description}
 
-**Schweregrad:** {threat.severity}
-**Betroffene Module:** {threat.affected_modules.map(m => `[[${m}]]`).join(', ')}
+**Severity:** {threat.severity}
+**Affected Modules:** {threat.affected_modules.map(m => `[[${m}]]`).join(', ')}
 
-**Evidenz:**
-{threat.evidence if present, else: "_Keine spezifische Codeevidenz dokumentiert._"}
+**Evidence:**
+{threat.evidence if present, else: "_No specific code evidence documented._"}
 
 **Mitigation:**
-{threat.mitigation if non-empty, else: "_Keine Mitigation dokumentiert._"}
+{threat.mitigation if non-empty, else: "_No mitigation documented._"}
 
 ---
 }
 
-## PII-Inventar
+## PII Inventory
 
 {Group pii_flows by likely category:
-- Authentifizierung: modules with auth/session/login/password in name
-- Benutzerprofil: modules with profile/user/account in name
-- Zahlungsdaten: modules with billing/payment/invoice in name
-- Verifizierung: modules with verification/tax/document in name
-- Kommunikation: modules with email/notification/message in name
-- Sonstiges: everything else
+- Authentication: modules with auth/session/login/password in name
+- User Profile: modules with profile/user/account in name
+- Payment Data: modules with billing/payment/invoice in name
+- Verification: modules with verification/tax/document in name
+- Communication: modules with email/notification/message in name
+- Other: everything else
 
 For each non-empty category:
 ### {category}
 {for each pii_flow: - [[{pii_flow}]]}
 
-If pii_flows is empty: "_Keine PII-Flows identifiziert._"
+If pii_flows is empty: "_No PII flows identified._"
 }
 
 *Last synced: {enriched_at}*
@@ -414,17 +435,21 @@ If pii_flows is empty: "_Keine PII-Flows identifiziert._"
 - Use [[wikilink]] format for all internal Obsidian links
 - File names must be deterministic from entity IDs (no spaces — use underscores)
 - All dates use the enriched_at timestamp from enriched_knowledge.json
+- Keep `Index.md` and `Run_Log.md` coherent with generated entity/index pages in the same run
+- Do not regenerate synthesis-heavy sections (e.g., architecture narrative) when the source inputs are unchanged
 - If vault_path is empty, STOP and return error: "vault_path not configured. Run /kto:init"
+- All generated markdown text must be English-only, regardless of user language
 </rules>
 
 <success_criteria>
 - [ ] Facts.md written/updated
-- [ ] Technology.md written/updated with Architekturüberblick and Technologie-Tabelle sections
-- [ ] One file per feature — each with Was es macht, Wie es funktioniert, Wie es eingesetzt wird, Sicherheitsaspekte sections
-- [ ] One file per third party — each with Zweck, Verwendung im Projekt, Datenzugriff, Sicherheitshinweise sections
+- [ ] Overview.md, Architecture.md, Index.md, Run_Log.md written/updated
+- [ ] Technology.md written/updated with Architecture Overview and Technology Table sections
+- [ ] One file per feature — each with What It Does, How It Works, How It Is Used, Security Considerations sections
+- [ ] One file per third party — each with Purpose, Usage in Project, Data Access, Security Notes sections
 - [ ] One file per module
 - [ ] Index files written
-- [ ] Security_Overview.md written with Authentifizierungs-Flow, Autorisierungsmodell, Bedrohungsdetails, PII-Inventar sections
+- [ ] Security_Overview.md written with Authentication Flow, Authorization Model, Threat Details, PII Inventory sections
 - [ ] No user content outside AUTO-GENERATED blocks was modified
 - [ ] Return: files created, files updated, vault path
 </success_criteria>

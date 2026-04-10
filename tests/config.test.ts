@@ -18,6 +18,8 @@ describe('loadConfig', () => {
     rmSync(join(TMP_DIR, '.kto'), { recursive: true });
     const config = await loadConfig(TMP_DIR);
     expect(config.agents.project_mapper).toBe(CONFIG_DEFAULTS.agents.project_mapper);
+    expect(config.agents.wiki_lint).toBe(CONFIG_DEFAULTS.agents.wiki_lint);
+    expect(config.agents.query_writer).toBe(CONFIG_DEFAULTS.agents.query_writer);
     expect(config.provider).toBe('anthropic');
     expect(config.vault_path).toBe('');
   });
@@ -45,6 +47,8 @@ describe('loadConfig', () => {
       vault_path: '/Users/test/Notes',
       agents: {
         graph_builder: 'claude-opus-4-6',
+        wiki_lint: 'claude-sonnet-4-6',
+        query_writer: 'claude-sonnet-4-6',
       },
     };
     writeFileSync(
@@ -53,6 +57,8 @@ describe('loadConfig', () => {
     );
     const config = await loadConfig(TMP_DIR);
     expect(config.agents.graph_builder).toBe('claude-opus-4-6');
+    expect(config.agents.wiki_lint).toBe('claude-sonnet-4-6');
+    expect(config.agents.query_writer).toBe('claude-sonnet-4-6');
     // Other agents keep their defaults
     expect(config.agents.project_mapper).toBe(CONFIG_DEFAULTS.agents.project_mapper);
   });
@@ -62,6 +68,8 @@ describe('loadConfig', () => {
       vault_path: '/Users/test/Notes',
       model_fallbacks: {
         graph_builder: 'claude-sonnet-4-6',
+        wiki_lint: 'claude-haiku-4-5-20251001',
+        query_writer: 'claude-haiku-4-5-20251001',
       },
     };
     writeFileSync(
@@ -70,6 +78,8 @@ describe('loadConfig', () => {
     );
     const config = await loadConfig(TMP_DIR);
     expect(config.model_fallbacks.graph_builder).toBe('claude-sonnet-4-6');
+    expect(config.model_fallbacks.wiki_lint).toBe('claude-haiku-4-5-20251001');
+    expect(config.model_fallbacks.query_writer).toBe('claude-haiku-4-5-20251001');
   });
 
   it('throws on malformed JSON', async () => {

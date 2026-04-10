@@ -1,6 +1,6 @@
 ---
-name: kto:sync
-description: Re-sync the persistent codebase wiki from existing {output_dir}/enriched_knowledge.json without re-analyzing source. Keeps Overview/Architecture/Index/Run_Log coherent.
+name: kto:lint
+description: Validate wiki coherence for the persistent codebase wiki (links, index integrity, run-log freshness, and page-target consistency) using existing graph artifacts.
 allowed-tools:
   - Read
   - Write
@@ -9,9 +9,7 @@ allowed-tools:
 ---
 
 <objective>
-Run only the Obsidian Sync phase of the kto wiki pipeline using the already-existing `{output_dir}/enriched_knowledge.json`. Does NOT re-scan the codebase.
-
-This command should preserve deterministic page targets and avoid rewriting synthesis pages when inputs have not changed.
+Run wiki-quality checks without re-analyzing source code. This validates whether the Obsidian wiki is coherent with `{output_dir}/enriched_knowledge.json`.
 </objective>
 
 <pre_check>
@@ -24,21 +22,26 @@ test -f "$OUTPUT_DIR/enriched_knowledge.json" && echo "OK" || echo "MISSING"
 If MISSING: "enriched_knowledge.json not found. Run /kto:analyze first."
 If NO_CONFIG: "kto is not initialized. Run /kto:init first."
 If config parsing fails: ".kto/config.json is invalid JSON. Fix it or run /kto:init to rewrite it."
-
-Treat `.kto/config.json` as authoritative and use `output_dir` for generated file locations.
 </pre_check>
 
 <execution>
-Spawn the `kto-obsidian-sync` agent.
+Spawn `kto-wiki-lint`.
 
-The agent reads `{output_dir}/enriched_knowledge.json` and `.kto/config.json` and writes/updates all notes.
+The agent must validate:
+- core pages exist and are coherent (`Overview.md`, `Architecture.md`, `Index.md`, `Run_Log.md`)
+- index links point to existing generated pages
+- entity `wiki.page_target` values align with actual vault paths
+- run-log has deterministic, append-only entries
+- synthesis pages are not being rewritten without input change signals
 </execution>
 
 <completion>
 Report:
-```
-✓ Vault sync complete
-  Notes written/updated: {count}
-  Vault: {vault_path}/{obsidian_subfolder}
+```text
+✓ Wiki lint complete
+  Status: {pass_or_fail}
+  Errors: {error_count}
+  Warnings: {warning_count}
+  Checked pages: {checked_count}
 ```
 </completion>

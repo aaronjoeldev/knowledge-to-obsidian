@@ -1,6 +1,6 @@
 ---
 name: kto:analyze
-description: Run the full kto pipeline — Project Mapper → Graph Builder → Obsidian Sync. Analyzes the entire codebase and writes all knowledge to the Obsidian vault. Use /kto:diff for incremental updates after code changes.
+description: Run the full persistent wiki pipeline — Project Mapper → Graph Builder → Obsidian Sync. Builds/refreshes codebase wiki artifacts and keeps core index/log pages coherent.
 allowed-tools:
   - Read
   - Write
@@ -11,10 +11,12 @@ allowed-tools:
 ---
 
 <objective>
-Execute the full kto three-agent pipeline for the current project:
+Execute the full kto three-agent wiki pipeline for the current project:
 1. kto-project-mapper → `{output_dir}/knowledge.json`
 2. kto-graph-builder → `{output_dir}/enriched_knowledge.json`
 3. kto-obsidian-sync → Obsidian vault notes
+
+The pipeline is deterministic: preserve stable IDs, keep index/log pages coherent, and avoid unnecessary regeneration of synthesis pages.
 </objective>
 
 <pre_check>
@@ -65,6 +67,8 @@ test -f "$OUTPUT_DIR/enriched_knowledge.json" && echo "OK" || echo "FAILED"
 Spawn the `kto-obsidian-sync` agent.
 
 The agent reads `{output_dir}/enriched_knowledge.json` and writes notes to the vault.
+
+It must treat Overview/Architecture/Index/Run_Log artifacts as first-class pages and update them coherently with entity notes.
 
 </execution>
 

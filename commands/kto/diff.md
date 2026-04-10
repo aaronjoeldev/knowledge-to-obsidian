@@ -1,6 +1,6 @@
 ---
 name: kto:diff
-description: Fast incremental update — detects which files changed since the last kto analysis and updates only the affected knowledge entities and Obsidian notes. Pass file paths as arguments or let kto detect changes via git diff.
+description: Fast incremental wiki update — detects changed files and updates only affected entities/notes while keeping Index + Run_Log coherent.
 allowed-tools:
   - Read
   - Write
@@ -11,6 +11,8 @@ allowed-tools:
 <objective>
 Run the kto Change Detector for files that have changed since the last analysis.
 Uses `git diff` to detect changes automatically, or accepts explicit file paths as arguments.
+
+The update must stay deterministic: only affected entity pages should change, while synthesis pages are updated only when required for index/log coherence.
 </objective>
 
 <arguments>

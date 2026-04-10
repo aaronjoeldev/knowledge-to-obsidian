@@ -148,4 +148,98 @@ describe('KtoRunner model validation', () => {
     expect(queryMock).toHaveBeenCalledTimes(2);
     expect(queryMock.mock.calls[1][0].options.model).toBeUndefined();
   });
+
+  it('calls the wiki lint agent model for lint()', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+        agents: { wiki_lint: 'wiki-lint-model' },
+      }),
+    );
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'enriched_knowledge.json'),
+      JSON.stringify({ features: [], modules: [] }),
+    );
+
+    queryMock.mockImplementation(() => successStream());
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR, skipModelValidation: true });
+    vi.spyOn(runner as any, 'readAgentDefinition').mockResolvedValue('mock-agent');
+    const result = await runner.lint();
+
+    expect(result.success).toBe(true);
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(queryMock.mock.calls[0][0].options.model).toBe('wiki-lint-model');
+  });
+
+  it('calls query writer without writeback by default', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+        agents: { query_writer: 'query-writer-model' },
+      }),
+    );
+
+    queryMock.mockImplementation(() => successStream());
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR, skipModelValidation: true });
+    vi.spyOn(runner as any, 'readAgentDefinition').mockResolvedValue('mock-agent');
+    const result = await runner.queryWiki('What changed in auth?');
+
+    expect(result.success).toBe(true);
+    expect(result.writeback).toBe(false);
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(queryMock.mock.calls[0][0].options.model).toBe('query-writer-model');
+    expect(queryMock.mock.calls[0][0].prompt).toContain('Writeback disabled');
+  });
+
+  it('calls query writer with writeback instructions when enabled', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+        agents: { query_writer: 'query-writer-model' },
+      }),
+    );
+
+    queryMock.mockImplementation(() => successStream());
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR, skipModelValidation: true });
+    vi.spyOn(runner as any, 'readAgentDefinition').mockResolvedValue('mock-agent');
+    const result = await runner.queryWiki('Document deployment flow', {
+      writeback: true,
+      targetPath: 'Projects/APP/Deployment.md',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.writeback).toBe(true);
+    expect(result.targetPath).toBe('Projects/APP/Deployment.md');
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(queryMock.mock.calls[0][0].prompt).toContain('Writeback enabled');
+    expect(queryMock.mock.calls[0][0].prompt).toContain('Projects/APP/Deployment.md');
+  });
+
+  it('rejects writeback queries without an explicit target path', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+        agents: { query_writer: 'query-writer-model' },
+      }),
+    );
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR, skipModelValidation: true });
+    vi.spyOn(runner as any, 'readAgentDefinition').mockResolvedValue('mock-agent');
+    const result = await runner.queryWiki('Write this back', { writeback: true });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/targetPath/i);
+    expect(queryMock).not.toHaveBeenCalled();
+  });
 });

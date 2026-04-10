@@ -38,9 +38,15 @@ describe('Knowledge Model Types', () => {
       modules: ['MODULE-AuthService'],
       third_parties: [],
       security_impact: 'high',
+      wiki: {
+        source_refs: [{ path: 'src/auth/login.ts', symbol: 'loginHandler' }],
+        last_verified: '2026-04-10T10:00:00Z',
+        page_target: 'Features/FEAT-001_UserAuthentication.md',
+      },
     };
     expect(feature.id).toBe('FEAT-001');
     expect(feature.status).toBe('implemented');
+    expect(feature.wiki?.source_refs?.[0]?.path).toBe('src/auth/login.ts');
   });
 
   it('KnowledgeModule has required fields', () => {
@@ -52,9 +58,13 @@ describe('Knowledge Model Types', () => {
       exports: ['AuthService', 'validateToken'],
       dependencies: ['THIRD-Auth0'],
       used_by_features: ['FEAT-001'],
+      wiki: {
+        page_target: 'Code_Map/MODULE-AuthService.md',
+      },
     };
     expect(module.id).toBe('MODULE-AuthService');
     expect(module.language).toBe('typescript');
+    expect(module.wiki?.page_target).toBe('Code_Map/MODULE-AuthService.md');
   });
 
   it('KnowledgeRelation links two entities', () => {
@@ -145,6 +155,9 @@ describe('Knowledge Model Types', () => {
       used_in: ['FEAT-001'],
       description: 'Open-source Firebase alternative with auth, database, and storage.',
       usage_in_project: 'Used for email/password auth and session management via SSR cookies.',
+      wiki: {
+        source_refs: [{ path: 'src/lib/supabase.ts' }],
+      },
     };
     expect(tp.description).toContain('Firebase');
     expect(tp.usage_in_project).toContain('session');

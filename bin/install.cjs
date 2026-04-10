@@ -229,6 +229,8 @@ function installClaude(isGlobal) {
     ${c.cyan}/kto:analyze${c.reset} — Full scan → knowledge graph → vault sync
     ${c.cyan}/kto:diff${c.reset}    — Incremental update for changed files
     ${c.cyan}/kto:sync${c.reset}    — Re-sync vault from existing knowledge
+    ${c.cyan}/kto:lint${c.reset}    — Validate wiki coherence and generated pages
+    ${c.cyan}/kto:query${c.reset}   — Query wiki artifacts (+ optional writeback)
 `);
 }
 
@@ -271,6 +273,8 @@ function installOpencode(isGlobal) {
     ${c.cyan}/kto-analyze${c.reset} — Full scan → knowledge graph → vault sync
     ${c.cyan}/kto-diff${c.reset}    — Incremental update for changed files
     ${c.cyan}/kto-sync${c.reset}    — Re-sync vault from existing knowledge
+    ${c.cyan}/kto-lint${c.reset}    — Validate wiki coherence and generated pages
+    ${c.cyan}/kto-query${c.reset}   — Query wiki artifacts (+ optional writeback)
 `);
 }
 

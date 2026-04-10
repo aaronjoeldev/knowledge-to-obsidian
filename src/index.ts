@@ -25,6 +25,8 @@ const AGENT_CONFIG_KEY_BY_NAME = {
   'kto-graph-builder': 'graph_builder',
   'kto-obsidian-sync': 'obsidian_sync',
   'kto-change-detector': 'change_detector',
+  'kto-wiki-lint': 'wiki_lint',
+  'kto-query-writer': 'query_writer',
 } as const satisfies Record<string, AgentConfigKey>;
 
 type AgentName = keyof typeof AGENT_CONFIG_KEY_BY_NAME;
@@ -70,6 +72,13 @@ export interface KtoPipelineResult {
   error?: string;
 }
 
+export interface KtoQueryResult {
+  success: boolean;
+  writeback: boolean;
+  targetPath?: string;
+  error?: string;
+}
+
 /**
  * Orchestrates the full kto pipeline programmatically.
  */
@@ -86,7 +95,7 @@ export class KtoRunner {
     this.skipModelValidation = options.skipModelValidation ?? false;
   }
 
-  /** Run the full pipeline: Project Mapper → Graph Builder → Obsidian Sync. */
+  /** Run the full wiki pipeline: Mapper → Graph → Wiki Sync. */
   async analyze(): Promise<KtoPipelineResult> {
     const config = await loadConfig(this.projectDir, { requireVault: true });
     this.resolvedModelCache.clear();
@@ -97,38 +106,38 @@ export class KtoRunner {
     ]);
 
     await this.runAgent(resolvedContexts['kto-project-mapper']!, {
-      task: 'scan repository and produce knowledge.json',
+      task: 'scan repository and produce wiki knowledge.json',
       cwd: this.projectDir,
     });
 
     await this.runAgent(resolvedContexts['kto-graph-builder']!, {
-      task: 'build knowledge graph from knowledge.json',
+      task: 'build wiki knowledge graph from knowledge.json',
       cwd: this.projectDir,
     });
 
     await this.runAgent(resolvedContexts['kto-obsidian-sync']!, {
-      task: 'sync enriched knowledge graph to obsidian vault',
+      task: 'sync enriched wiki knowledge graph to obsidian vault',
       cwd: this.projectDir,
     });
 
     return this.buildResult(config);
   }
 
-  /** Run only the Obsidian sync phase from existing enriched_knowledge.json. */
+  /** Run only the wiki sync phase from existing enriched_knowledge.json. */
   async sync(): Promise<KtoPipelineResult> {
     const config = await loadConfig(this.projectDir, { requireVault: true });
     this.resolvedModelCache.clear();
     const resolvedContexts = await this.resolveModelsForAgents(config, ['kto-obsidian-sync']);
 
     await this.runAgent(resolvedContexts['kto-obsidian-sync']!, {
-      task: 'sync enriched knowledge graph to obsidian vault',
+      task: 'sync enriched wiki knowledge graph to obsidian vault',
       cwd: this.projectDir,
     });
 
     return this.buildResult(config);
   }
 
-  /** Run the change detector for a specific set of changed files. */
+  /** Run wiki change detection for a specific set of changed files. */
   async diff(changedFiles: string[]): Promise<KtoPipelineResult> {
     const config = await loadConfig(this.projectDir, { requireVault: true });
     const fileList = changedFiles.join('\n');
@@ -136,11 +145,70 @@ export class KtoRunner {
     const resolvedContexts = await this.resolveModelsForAgents(config, ['kto-change-detector']);
 
     await this.runAgent(resolvedContexts['kto-change-detector']!, {
-      task: `update knowledge for changed files:\n${fileList}`,
+      task: `update wiki knowledge for changed files:\n${fileList}`,
       cwd: this.projectDir,
     });
 
     return this.buildResult(config);
+  }
+
+  /** Run wiki lint checks for the generated knowledge artifacts. */
+  async lint(): Promise<KtoPipelineResult> {
+    const config = await loadConfig(this.projectDir, { requireVault: true });
+    this.resolvedModelCache.clear();
+    const resolvedContexts = await this.resolveModelsForAgents(config, ['kto-wiki-lint']);
+
+    await this.runAgent(resolvedContexts['kto-wiki-lint']!, {
+      task: 'lint wiki knowledge artifacts and report issues',
+      cwd: this.projectDir,
+    });
+
+    return this.buildResult(config);
+  }
+
+  /** Query the wiki knowledge and optionally request writeback. */
+  async queryWiki(
+    question: string,
+    options: { writeback?: boolean; targetPath?: string } = {},
+  ): Promise<KtoQueryResult> {
+    const config = await loadConfig(this.projectDir, { requireVault: true });
+    this.resolvedModelCache.clear();
+    const resolvedContexts = await this.resolveModelsForAgents(config, ['kto-query-writer']);
+
+    const trimmedQuestion = question.trim();
+    if (trimmedQuestion === '') {
+      return {
+        success: false,
+        writeback: options.writeback === true,
+        ...(options.targetPath === undefined ? {} : { targetPath: options.targetPath }),
+        error: 'Question must be a non-empty string',
+      };
+    }
+
+    const writebackRequested = options.writeback === true;
+    const trimmedTargetPath = options.targetPath?.trim();
+    if (writebackRequested && (trimmedTargetPath === undefined || trimmedTargetPath === '')) {
+      return {
+        success: false,
+        writeback: true,
+        error: 'targetPath is required when writeback is enabled',
+      };
+    }
+
+    const writebackInstruction = writebackRequested
+      ? `Writeback enabled. Apply changes to ${trimmedTargetPath}.`
+      : 'Writeback disabled. Do not modify files; provide a read-only answer.';
+
+    await this.runAgent(resolvedContexts['kto-query-writer']!, {
+      task: `Answer this wiki question:\n${trimmedQuestion}\n\n${writebackInstruction}`,
+      cwd: this.projectDir,
+    });
+
+    return {
+      success: true,
+      writeback: writebackRequested,
+      ...(trimmedTargetPath === undefined ? {} : { targetPath: trimmedTargetPath }),
+    };
   }
 
   private async runAgent(
