@@ -135,6 +135,20 @@ When to use what:
 - **diff**: regular development after code changes
 - **sync**: regenerate vault notes from existing `enriched_knowledge.json` only
 
+`/kto:init` detects configured providers where possible. If you pick a non-Anthropic provider (Bedrock, Vertex, Foundry, OpenRouter, OpenAI/Codex, GLM/Z.AI), the safest default is usually `"inherit"` so kto follows the current runtime/provider model instead of forcing Anthropic model IDs.
+
+Currently recognized provider signals during init include:
+
+- **Anthropic** — `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`
+- **Bedrock** — `CLAUDE_CODE_USE_BEDROCK`, `ANTHROPIC_BEDROCK_BASE_URL`, `AWS_BEARER_TOKEN_BEDROCK`
+- **Vertex AI** — `CLAUDE_CODE_USE_VERTEX`, `ANTHROPIC_VERTEX_PROJECT_ID`, `ANTHROPIC_VERTEX_BASE_URL`
+- **Foundry** — `ANTHROPIC_FOUNDRY_API_KEY`, `ANTHROPIC_FOUNDRY_API_ENDPOINT`, `ANTHROPIC_FOUNDRY_MODEL`
+- **OpenRouter** — `OPENROUTER_API_KEY`
+- **OpenAI / Codex** — `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CODEX_PROVIDER`, `CODEX_MODEL`, `CODEX_HOME`
+- **GLM / Z.AI** — `Z_AI_API_KEY`, `GLM_API_KEY`, `GLM_BASE_URL`, `GLM_MODEL`, `GLM_DELEGATOR_CONFIG`
+
+If multiple providers are detected, `/kto:init` lets you choose which one this repo should target.
+
 ## Configuration reference (`.kto/config.json`)
 
 Canonical shape:
@@ -150,6 +164,9 @@ Canonical shape:
     "graph_builder": "claude-sonnet-4-6",
     "obsidian_sync": "claude-haiku-4-5-20251001",
     "change_detector": "claude-haiku-4-5-20251001"
+  },
+  "model_fallbacks": {
+    "graph_builder": "inherit"
   }
 }
 ```
@@ -161,6 +178,7 @@ Defaults (if fields are omitted by config loading):
 - `obsidian_subfolder`: `"Projects/PROJECT"`
 - `output_dir`: `".kto"`
 - agent model defaults as shown above
+- `model_fallbacks`: `{}`
 
 Validation rules (from runtime config loader):
 
@@ -169,6 +187,25 @@ Validation rules (from runtime config loader):
 - `obsidian_subfolder`: non-empty string
 - `output_dir`: non-empty **relative** path, must not be absolute, must not contain `..`
 - each `agents.*`: non-empty string
+- `model_fallbacks`: object; each provided `model_fallbacks.*` must be a non-empty string
+
+`agents.*` and `model_fallbacks.*` may also be set to `"inherit"`. In that case, kto does not force a specific model ID and instead lets the current host/runtime/provider decide which model to use.
+
+This is especially useful for:
+
+- Claude Code sessions routed through Bedrock, Vertex, Foundry, or OpenRouter
+- Codex / OpenAI-based workflows
+- GLM / Z.AI or other Anthropic-compatible gateways
+
+### Model availability preflight and fallback
+
+- `KtoRunner` now validates configured agent models before the pipeline starts.
+- If a primary model fails due to invalid model ID, missing authentication, or provider/account access issues, kto raises a clearer error before doing pipeline work.
+- You can configure optional per-agent fallbacks in `model_fallbacks`.
+- If a fallback model is set and passes validation, kto uses it automatically for that run.
+- If a model or fallback is set to `inherit`, kto skips explicit model validation for that slot and lets the current host/provider resolve the model.
+- `modelOverrides` still win; when you override an agent model programmatically, config-based fallback is not applied to that override.
+- If you need the old behavior, construct `new KtoRunner({ projectDir, skipModelValidation: true })`.
 
 ### `output_dir` behavior
 
@@ -195,7 +232,7 @@ Typical embedding cases:
 
 `src/index.ts` exports a programmatic runner:
 
-- `new KtoRunner({ projectDir, modelOverrides? })`
+- `new KtoRunner({ projectDir, modelOverrides?, skipModelValidation? })`
 - `runner.analyze()`
 - `runner.diff(changedFiles)`
 - `runner.sync()`
@@ -239,6 +276,8 @@ Repository artifacts:
 
 - `{output_dir}/knowledge.json` (raw structure)
 - `{output_dir}/enriched_knowledge.json` (semantic graph)
+
+`knowledge.json` is intended to describe the actual project source tree, not dependency or build noise. By default, kto excludes common generated and dependency directories such as `node_modules/`, `.git/`, `.next/`, `.nuxt/`, `.svelte-kit/`, `.turbo/`, `.cache/`, `.parcel-cache/`, `.vercel/`, `vendor/`, `target/`, `out/`, `dist/`, `build/`, `coverage/`, `generated/`, `__generated__/`, and `{output_dir}/`.
 
 Vault output root:
 

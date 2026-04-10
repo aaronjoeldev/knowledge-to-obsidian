@@ -1,0 +1,151 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+const { queryMock } = vi.hoisted(() => ({
+  queryMock: vi.fn(),
+}));
+
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  query: queryMock,
+}));
+
+import { KtoRunner } from '../src/index.js';
+
+const TMP_DIR = '/tmp/kto-runner-test';
+
+function successStream() {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield { type: 'result', subtype: 'success' };
+    },
+  };
+}
+
+function failureStream(errors: unknown) {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield { type: 'result', subtype: 'error', errors };
+    },
+  };
+}
+
+beforeEach(() => {
+  mkdirSync(join(TMP_DIR, '.kto'), { recursive: true });
+  queryMock.mockReset();
+});
+
+afterEach(() => {
+  if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true });
+});
+
+describe('KtoRunner model validation', () => {
+  it('omits the model option when an agent is configured to inherit the current provider model', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+        agents: { obsidian_sync: 'inherit' },
+      }),
+    );
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'enriched_knowledge.json'),
+      JSON.stringify({ features: [], modules: [] }),
+    );
+
+    queryMock.mockImplementation(() => successStream());
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR });
+    const result = await runner.sync();
+
+    expect(result.success).toBe(true);
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(queryMock.mock.calls[0][0].options.model).toBeUndefined();
+  });
+
+  it('uses a configured fallback model when the primary model is unavailable', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+        agents: { obsidian_sync: 'invalid-model-name' },
+        model_fallbacks: { obsidian_sync: 'claude-haiku-4-5-20251001' },
+      }),
+    );
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'enriched_knowledge.json'),
+      JSON.stringify({ features: [], modules: [] }),
+    );
+
+    queryMock.mockImplementation(({ options }: { options: { model: string } }) => {
+      if (options.model === 'invalid-model-name') {
+        return failureStream([{ message: '404 model: invalid-model-name' }]);
+      }
+      return successStream();
+    });
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR });
+    const result = await runner.sync();
+
+    expect(result.success).toBe(true);
+    const modelsUsed = queryMock.mock.calls.map(([call]) => call.options.model);
+    expect(modelsUsed).toEqual([
+      'invalid-model-name',
+      'claude-haiku-4-5-20251001',
+      'claude-haiku-4-5-20251001',
+    ]);
+  });
+
+  it('throws a clear error when the configured model cannot authenticate and no fallback exists', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+        agents: { obsidian_sync: 'claude-sonnet-4-6' },
+      }),
+    );
+
+    queryMock.mockImplementation(() => {
+      return failureStream([{ message: 'Invalid API key' }]);
+    });
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR });
+
+    await expect(runner.sync()).rejects.toThrow(
+      /authentication failed|model_fallbacks\.obsidian_sync/i,
+    );
+  });
+
+  it('uses inherit as a fallback for provider-managed sessions', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+        agents: { obsidian_sync: 'claude-sonnet-4-6' },
+        model_fallbacks: { obsidian_sync: 'inherit' },
+      }),
+    );
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'enriched_knowledge.json'),
+      JSON.stringify({ features: [], modules: [] }),
+    );
+
+    queryMock.mockImplementation(({ options }: { options: { model?: string } }) => {
+      if (options.model === 'claude-sonnet-4-6') {
+        return failureStream([{ message: '403 provider access unavailable' }]);
+      }
+      return successStream();
+    });
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR });
+    const result = await runner.sync();
+
+    expect(result.success).toBe(true);
+    expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(queryMock.mock.calls[1][0].options.model).toBeUndefined();
+  });
+});

@@ -36,6 +36,15 @@ interface ResolvedAgentRunContext {
   model: string;
 }
 
+interface ModelAvailabilityError {
+  category: 'invalid_model' | 'authentication' | 'unavailable' | 'unknown';
+  detail: string;
+}
+
+function isInheritModel(model: string | undefined): boolean {
+  return (model ?? '').trim().toLowerCase() === 'inherit';
+}
+
 interface ResolvedPaths {
   outputDir: string;
   enrichedKnowledgePath: string;
@@ -48,6 +57,8 @@ export interface KtoRunnerOptions {
   projectDir: string;
   /** Override model for a specific agent. Takes precedence over config. */
   modelOverrides?: Partial<Record<ModelOverrideKey, string>>;
+  /** Disable startup model-access checks. */
+  skipModelValidation?: boolean;
 }
 
 export interface KtoPipelineResult {
@@ -65,27 +76,37 @@ export interface KtoPipelineResult {
 export class KtoRunner {
   private readonly projectDir: string;
   private readonly modelOverrides: Partial<Record<ModelOverrideKey, string>>;
+  private readonly skipModelValidation: boolean;
+  private readonly modelAvailabilityCache = new Map<string, Promise<void>>();
+  private readonly resolvedModelCache = new Map<AgentName, ResolvedAgentRunContext>();
 
   constructor(options: KtoRunnerOptions) {
     this.projectDir = options.projectDir;
     this.modelOverrides = options.modelOverrides ?? {};
+    this.skipModelValidation = options.skipModelValidation ?? false;
   }
 
   /** Run the full pipeline: Project Mapper → Graph Builder → Obsidian Sync. */
   async analyze(): Promise<KtoPipelineResult> {
     const config = await loadConfig(this.projectDir, { requireVault: true });
+    this.resolvedModelCache.clear();
+    const resolvedContexts = await this.resolveModelsForAgents(config, [
+      'kto-project-mapper',
+      'kto-graph-builder',
+      'kto-obsidian-sync',
+    ]);
 
-    await this.runAgent(config, 'kto-project-mapper', {
+    await this.runAgent(resolvedContexts['kto-project-mapper']!, {
       task: 'scan repository and produce knowledge.json',
       cwd: this.projectDir,
     });
 
-    await this.runAgent(config, 'kto-graph-builder', {
+    await this.runAgent(resolvedContexts['kto-graph-builder']!, {
       task: 'build knowledge graph from knowledge.json',
       cwd: this.projectDir,
     });
 
-    await this.runAgent(config, 'kto-obsidian-sync', {
+    await this.runAgent(resolvedContexts['kto-obsidian-sync']!, {
       task: 'sync enriched knowledge graph to obsidian vault',
       cwd: this.projectDir,
     });
@@ -96,8 +117,10 @@ export class KtoRunner {
   /** Run only the Obsidian sync phase from existing enriched_knowledge.json. */
   async sync(): Promise<KtoPipelineResult> {
     const config = await loadConfig(this.projectDir, { requireVault: true });
+    this.resolvedModelCache.clear();
+    const resolvedContexts = await this.resolveModelsForAgents(config, ['kto-obsidian-sync']);
 
-    await this.runAgent(config, 'kto-obsidian-sync', {
+    await this.runAgent(resolvedContexts['kto-obsidian-sync']!, {
       task: 'sync enriched knowledge graph to obsidian vault',
       cwd: this.projectDir,
     });
@@ -109,8 +132,10 @@ export class KtoRunner {
   async diff(changedFiles: string[]): Promise<KtoPipelineResult> {
     const config = await loadConfig(this.projectDir, { requireVault: true });
     const fileList = changedFiles.join('\n');
+    this.resolvedModelCache.clear();
+    const resolvedContexts = await this.resolveModelsForAgents(config, ['kto-change-detector']);
 
-    await this.runAgent(config, 'kto-change-detector', {
+    await this.runAgent(resolvedContexts['kto-change-detector']!, {
       task: `update knowledge for changed files:\n${fileList}`,
       cwd: this.projectDir,
     });
@@ -119,11 +144,10 @@ export class KtoRunner {
   }
 
   private async runAgent(
-    config: KtoConfig,
-    agentName: AgentName,
+    runContext: ResolvedAgentRunContext,
     opts: { task: string; cwd: string },
   ): Promise<void> {
-    const runContext = this.resolveAgentRunContext(config, agentName);
+    const agentName = runContext.name;
     let agentDef: string;
     try {
       agentDef = await this.readAgentDefinition(agentName);
@@ -144,7 +168,7 @@ export class KtoRunner {
         allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],
         maxTurns: 50,
         cwd: opts.cwd,
-        model: runContext.model,
+        ...(isInheritModel(runContext.model) ? {} : { model: runContext.model }),
       },
     });
 
@@ -155,17 +179,255 @@ export class KtoRunner {
     }
   }
 
-  private resolveAgentRunContext(config: KtoConfig, agentName: AgentName): ResolvedAgentRunContext {
-    const configKey = AGENT_CONFIG_KEY_BY_NAME[agentName];
-    const model = this.modelOverrides[agentName]
-      ?? this.modelOverrides[configKey]
-      ?? config.agents[configKey];
+  private async resolveModelsForAgents(
+    config: KtoConfig,
+    agentNames: AgentName[],
+  ): Promise<Partial<Record<AgentName, ResolvedAgentRunContext>>> {
+    const entries = await Promise.all(agentNames.map(async (agentName) => {
+      const context = await this.resolveAgentRunContext(config, agentName, this.projectDir);
+      return [agentName, context] as const;
+    }));
 
-    return {
+    return Object.fromEntries(entries) as Partial<Record<AgentName, ResolvedAgentRunContext>>;
+  }
+
+  private async resolveAgentRunContext(
+    config: KtoConfig,
+    agentName: AgentName,
+    cwd: string,
+  ): Promise<ResolvedAgentRunContext> {
+    const cachedContext = this.resolvedModelCache.get(agentName);
+    if (cachedContext !== undefined) {
+      return cachedContext;
+    }
+
+    const configKey = AGENT_CONFIG_KEY_BY_NAME[agentName];
+    const primaryOverride = this.modelOverrides[agentName]?.trim()
+      ?? this.modelOverrides[configKey]?.trim();
+    const primaryModel = primaryOverride
+      ?? config.agents[configKey];
+    const fallbackModel = primaryOverride === undefined
+      ? config.model_fallbacks[configKey]
+      : undefined;
+
+    if (!this.skipModelValidation) {
+      if (isInheritModel(primaryModel)) {
+        const resolvedContext = {
+          name: agentName,
+          configKey,
+          model: primaryModel,
+        };
+        this.resolvedModelCache.set(agentName, resolvedContext);
+        return resolvedContext;
+      }
+
+      try {
+        await this.assertModelAvailable(primaryModel, cwd);
+      } catch (primaryErr) {
+        const primaryAvailability = this.toModelAvailabilityError(primaryErr);
+        if (
+          fallbackModel !== undefined
+          && fallbackModel !== primaryModel
+          && !isInheritModel(fallbackModel)
+          && primaryAvailability.category !== 'unknown'
+        ) {
+          try {
+            await this.assertModelAvailable(fallbackModel, cwd);
+            const resolvedContext = {
+              name: agentName,
+              configKey,
+              model: fallbackModel,
+            };
+            this.resolvedModelCache.set(agentName, resolvedContext);
+            return resolvedContext;
+          } catch (fallbackErr) {
+            throw new Error(this.formatFallbackFailure({
+              agentName,
+              configKey,
+              primaryModel,
+              primaryErr: primaryAvailability,
+              fallbackModel,
+              fallbackErr,
+            }));
+          }
+        }
+
+        if (
+          fallbackModel !== undefined
+          && fallbackModel !== primaryModel
+          && isInheritModel(fallbackModel)
+          && primaryAvailability.category !== 'unknown'
+        ) {
+          const resolvedContext = {
+            name: agentName,
+            configKey,
+            model: fallbackModel,
+          };
+          this.resolvedModelCache.set(agentName, resolvedContext);
+          return resolvedContext;
+        }
+
+        throw new Error(this.formatPrimaryFailure({
+          agentName,
+          configKey,
+          primaryModel,
+          primaryErr: primaryAvailability,
+          fallbackConfigured: fallbackModel !== undefined,
+        }));
+      }
+    }
+
+    const resolvedContext = {
       name: agentName,
       configKey,
-      model,
+      model: primaryModel,
     };
+    this.resolvedModelCache.set(agentName, resolvedContext);
+    return resolvedContext;
+  }
+
+  private async assertModelAvailable(model: string, cwd: string): Promise<void> {
+    const existing = this.modelAvailabilityCache.get(model);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const validationPromise = this.probeModelAccess(model, cwd);
+    this.modelAvailabilityCache.set(model, validationPromise);
+
+    try {
+      await validationPromise;
+    } catch (err) {
+      this.modelAvailabilityCache.delete(model);
+      throw err;
+    }
+  }
+
+  private async probeModelAccess(model: string, cwd: string): Promise<void> {
+    const stream = query({
+      prompt: 'Reply with exactly OK.',
+      options: {
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+        allowedTools: [],
+        maxTurns: 1,
+        cwd,
+        model,
+      },
+    });
+
+    for await (const msg of stream) {
+      if (msg.type === 'result' && msg.subtype !== 'success') {
+        const raw = JSON.stringify((msg as { errors?: unknown }).errors ?? msg);
+        throw this.toModelAvailabilityError(raw);
+      }
+    }
+  }
+
+  private toModelAvailabilityError(input: unknown): ModelAvailabilityError {
+    const detail = this.stringifyAvailabilityInput(input);
+    const normalized = detail.toLowerCase();
+
+    if (
+      normalized.includes('invalid api key')
+      || normalized.includes('authentication_failed')
+      || normalized.includes('please run /login')
+      || normalized.includes('auth token')
+      || normalized.includes('api key')
+    ) {
+      return { category: 'authentication', detail };
+    }
+
+    if (
+      normalized.includes('invalid model')
+      || normalized.includes('invalid-model')
+      || normalized.includes('model identifier is invalid')
+      || normalized.includes('model not found')
+      || normalized.includes('not_found_error')
+    ) {
+      return { category: 'invalid_model', detail };
+    }
+
+    if (
+      normalized.includes('403')
+      || normalized.includes('forbidden')
+      || normalized.includes('not been granted access')
+      || normalized.includes('unavailable')
+      || normalized.includes('unsupported region')
+      || normalized.includes('provider')
+    ) {
+      return { category: 'unavailable', detail };
+    }
+
+    return { category: 'unknown', detail };
+  }
+
+  private stringifyAvailabilityInput(input: unknown): string {
+    if (input instanceof Error) {
+      return input.message;
+    }
+
+    if (typeof input === 'string') {
+      return input;
+    }
+
+    try {
+      return JSON.stringify(input);
+    } catch {
+      return String(input);
+    }
+  }
+
+  private formatPrimaryFailure(args: {
+    agentName: AgentName;
+    configKey: AgentConfigKey;
+    primaryModel: string;
+    primaryErr: unknown;
+    fallbackConfigured: boolean;
+  }): string {
+    const classified = this.toModelAvailabilityError(args.primaryErr);
+    const fix = args.fallbackConfigured
+      ? `Fix .kto/config.json -> agents.${args.configKey} or remove/update model_fallbacks.${args.configKey}.`
+      : `Fix .kto/config.json -> agents.${args.configKey} or add model_fallbacks.${args.configKey}.`;
+
+    return [
+      `Configured model "${args.primaryModel}" for agent "${args.agentName}" is unavailable (${this.describeAvailabilityCategory(classified.category)}).`,
+      `Detail: ${classified.detail}`,
+      fix,
+    ].join(' ');
+  }
+
+  private formatFallbackFailure(args: {
+    agentName: AgentName;
+    configKey: AgentConfigKey;
+    primaryModel: string;
+    primaryErr: unknown;
+    fallbackModel: string;
+    fallbackErr: unknown;
+  }): string {
+    const primary = this.toModelAvailabilityError(args.primaryErr);
+    const fallback = this.toModelAvailabilityError(args.fallbackErr);
+
+    return [
+      `Configured model "${args.primaryModel}" for agent "${args.agentName}" is unavailable (${this.describeAvailabilityCategory(primary.category)}).`,
+      `Fallback model "${args.fallbackModel}" also failed (${this.describeAvailabilityCategory(fallback.category)}).`,
+      `Primary detail: ${primary.detail}`,
+      `Fallback detail: ${fallback.detail}`,
+      `Fix .kto/config.json -> agents.${args.configKey} / model_fallbacks.${args.configKey}.`,
+    ].join(' ');
+  }
+
+  private describeAvailabilityCategory(category: ModelAvailabilityError['category']): string {
+    switch (category) {
+      case 'authentication':
+        return 'authentication failed';
+      case 'invalid_model':
+        return 'invalid or unavailable model ID';
+      case 'unavailable':
+        return 'provider or account access unavailable';
+      default:
+        return 'unknown runtime error';
+    }
   }
 
   private async readAgentDefinition(agentName: AgentName): Promise<string> {

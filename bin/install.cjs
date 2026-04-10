@@ -350,7 +350,8 @@ function installAll(runtimes, isGlobal) {
   }
 
   console.log(`  ${c.green}${c.bold}kto installed successfully!${c.reset}\n`);
-  console.log(`  Get started: open any project and run ${c.cyan}/kto:init${c.reset}\n`);
+  console.log(`  Get started: open any project and run ${c.cyan}/kto:init${c.reset}`);
+  console.log(`  ${c.dim}/kto:init detects configured providers and can default agents to the current provider model via 'inherit'.${c.reset}\n`);
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────

@@ -54,6 +54,21 @@ describe('loadConfig', () => {
     expect(config.agents.project_mapper).toBe(CONFIG_DEFAULTS.agents.project_mapper);
   });
 
+  it('allows optional per-agent model fallbacks', async () => {
+    const userConfig = {
+      vault_path: '/Users/test/Notes',
+      model_fallbacks: {
+        graph_builder: 'claude-sonnet-4-6',
+      },
+    };
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify(userConfig),
+    );
+    const config = await loadConfig(TMP_DIR);
+    expect(config.model_fallbacks.graph_builder).toBe('claude-sonnet-4-6');
+  });
+
   it('throws on malformed JSON', async () => {
     writeFileSync(join(TMP_DIR, '.kto', 'config.json'), '{ broken json');
     await expect(loadConfig(TMP_DIR)).rejects.toThrow('Failed to parse');
@@ -99,6 +114,15 @@ describe('loadConfig', () => {
     await expect(loadConfig(TMP_DIR)).rejects.toThrow('agents must be an object');
   });
 
+  it('throws when model_fallbacks is not an object', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({ model_fallbacks: 'claude-sonnet-4-6' }),
+    );
+
+    await expect(loadConfig(TMP_DIR)).rejects.toThrow('model_fallbacks must be an object');
+  });
+
   it('throws when strings are empty after trimming', async () => {
     const invalidConfig: Partial<KtoConfig> = {
       project_id: '   ',
@@ -123,6 +147,15 @@ describe('loadConfig', () => {
 
     const config = await loadConfig(TMP_DIR);
     expect(config.output_dir).toBe('kto-out/nested');
+  });
+
+  it('rejects empty model fallback values', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({ model_fallbacks: { graph_builder: '   ' } }),
+    );
+
+    await expect(loadConfig(TMP_DIR)).rejects.toThrow('model_fallbacks.graph_builder must be a non-empty string when set');
   });
 
   it('rejects absolute output_dir paths', async () => {

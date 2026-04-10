@@ -21,6 +21,8 @@ export interface KtoConfig {
   output_dir: string;
   /** Model ID per agent. */
   agents: KtoAgentsConfig;
+  /** Optional fallback model ID per agent when the primary model is unavailable. */
+  model_fallbacks: Partial<KtoAgentsConfig>;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ export const CONFIG_DEFAULTS: KtoConfig = {
     obsidian_sync: 'claude-haiku-4-5-20251001',
     change_detector: 'claude-haiku-4-5-20251001',
   },
+  model_fallbacks: {},
 };
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
@@ -76,11 +79,19 @@ export async function loadConfig(
   }
 
   const parsedAgents = parsed['agents'];
+  const parsedFallbacks = parsed['model_fallbacks'];
   if (
     parsedAgents !== undefined
     && (typeof parsedAgents !== 'object' || parsedAgents === null || Array.isArray(parsedAgents))
   ) {
     throw new Error(`Invalid config at ${configPath}: agents must be an object`);
+  }
+
+  if (
+    parsedFallbacks !== undefined
+    && (typeof parsedFallbacks !== 'object' || parsedFallbacks === null || Array.isArray(parsedFallbacks))
+  ) {
+    throw new Error(`Invalid config at ${configPath}: model_fallbacks must be an object`);
   }
 
   const merged: KtoConfig = {
@@ -89,6 +100,10 @@ export async function loadConfig(
     agents: {
       ...CONFIG_DEFAULTS.agents,
       ...(parsedAgents as Partial<KtoAgentsConfig> ?? {}),
+    },
+    model_fallbacks: {
+      ...CONFIG_DEFAULTS.model_fallbacks,
+      ...(parsedFallbacks as Partial<KtoAgentsConfig> ?? {}),
     },
   };
 
@@ -140,6 +155,14 @@ function validateAndReturn(
     throw new Error(`Invalid config at ${configPath}: agents must be an object`);
   }
 
+  if (
+    typeof config.model_fallbacks !== 'object'
+    || config.model_fallbacks === null
+    || Array.isArray(config.model_fallbacks)
+  ) {
+    throw new Error(`Invalid config at ${configPath}: model_fallbacks must be an object`);
+  }
+
   const agentFields: Array<keyof KtoAgentsConfig> = [
     'project_mapper',
     'graph_builder',
@@ -151,6 +174,15 @@ function validateAndReturn(
     const value = config.agents[field];
     if (typeof value !== 'string' || value.trim() === '') {
       throw new Error(`Invalid config at ${configPath}: agents.${field} must be a non-empty string`);
+    }
+    config.agents[field] = value.trim();
+
+    const fallbackValue = config.model_fallbacks[field];
+    if (fallbackValue !== undefined && (typeof fallbackValue !== 'string' || fallbackValue.trim() === '')) {
+      throw new Error(`Invalid config at ${configPath}: model_fallbacks.${field} must be a non-empty string when set`);
+    }
+    if (fallbackValue !== undefined) {
+      config.model_fallbacks[field] = fallbackValue.trim();
     }
   }
 
