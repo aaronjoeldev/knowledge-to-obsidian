@@ -135,7 +135,7 @@ When to use what:
 - **diff**: regular development after code changes
 - **sync**: regenerate vault notes from existing `enriched_knowledge.json` only
 
-`/kto:init` detects configured providers where possible. If you pick a non-Anthropic provider (Bedrock, Vertex, Foundry, OpenRouter, OpenAI/Codex, GLM/Z.AI), the safest default is usually `"inherit"` so kto follows the current runtime/provider model instead of forcing Anthropic model IDs.
+`/kto:init` now uses a code-backed helper (`bin/kto-tools.cjs`) to detect provider signals and build defaults. It always shows the full provider picker, with detected/recommended options surfaced first. If you pick a non-Anthropic provider (Bedrock, Vertex, Foundry, OpenRouter, OpenAI/Codex, GLM/Z.AI), the safest default is usually `"inherit"` so kto follows the current runtime/provider model instead of forcing Anthropic model IDs.
 
 Currently recognized provider signals during init include:
 
@@ -156,6 +156,7 @@ Canonical shape:
 ```json
 {
   "vault_path": "/absolute/path/to/vault",
+  "provider": "anthropic",
   "project_id": "MY-PROJECT",
   "obsidian_subfolder": "Projects/MY-PROJECT",
   "output_dir": ".kto",
@@ -174,6 +175,7 @@ Canonical shape:
 Defaults (if fields are omitted by config loading):
 
 - `vault_path`: `""`
+- `provider`: `"anthropic"`
 - `project_id`: `"PROJECT"`
 - `obsidian_subfolder`: `"Projects/PROJECT"`
 - `output_dir`: `".kto"`
@@ -183,6 +185,7 @@ Defaults (if fields are omitted by config loading):
 Validation rules (from runtime config loader):
 
 - `vault_path`: string; if set, must be an **absolute path**
+- `provider`: one of `anthropic`, `bedrock`, `vertex`, `foundry`, `openrouter`, `openai/codex`, `glm`
 - `project_id`: non-empty string
 - `obsidian_subfolder`: non-empty string
 - `output_dir`: non-empty **relative** path, must not be absolute, must not contain `..`

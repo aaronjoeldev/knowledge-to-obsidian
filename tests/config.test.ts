@@ -18,12 +18,14 @@ describe('loadConfig', () => {
     rmSync(join(TMP_DIR, '.kto'), { recursive: true });
     const config = await loadConfig(TMP_DIR);
     expect(config.agents.project_mapper).toBe(CONFIG_DEFAULTS.agents.project_mapper);
+    expect(config.provider).toBe('anthropic');
     expect(config.vault_path).toBe('');
   });
 
   it('merges user config over defaults', async () => {
     const userConfig = {
       vault_path: '/Users/test/Notes',
+      provider: 'openrouter',
       project_id: 'MY-PROJECT',
     };
     writeFileSync(
@@ -32,6 +34,7 @@ describe('loadConfig', () => {
     );
     const config = await loadConfig(TMP_DIR);
     expect(config.vault_path).toBe('/Users/test/Notes');
+    expect(config.provider).toBe('openrouter');
     expect(config.project_id).toBe('MY-PROJECT');
     // Defaults preserved for unset fields
     expect(config.agents.project_mapper).toBe(CONFIG_DEFAULTS.agents.project_mapper);
@@ -95,6 +98,7 @@ describe('loadConfig', () => {
 
   it('throws when top-level config fields have invalid types', async () => {
     const invalidConfig = {
+      provider: 'not-a-provider',
       project_id: 123,
       obsidian_subfolder: true,
       output_dir: ['.kto'],
@@ -102,7 +106,7 @@ describe('loadConfig', () => {
 
     writeFileSync(join(TMP_DIR, '.kto', 'config.json'), JSON.stringify(invalidConfig));
 
-    await expect(loadConfig(TMP_DIR)).rejects.toThrow('project_id must be a non-empty string');
+    await expect(loadConfig(TMP_DIR)).rejects.toThrow('provider must be one of');
   });
 
   it('throws when agents is not an object', async () => {

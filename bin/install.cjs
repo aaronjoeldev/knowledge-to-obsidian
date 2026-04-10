@@ -213,8 +213,10 @@ function installClaude(isGlobal) {
   // agents + commands into kto/ subfolder
   copyDir(path.join(PACKAGE_ROOT, 'agents'),   path.join(ktoDir, 'agents'));
   copyDir(path.join(PACKAGE_ROOT, 'commands'), path.join(ktoDir, 'commands'));
+  copyDir(path.join(PACKAGE_ROOT, 'bin'),      path.join(ktoDir, 'bin'));
   console.log(`    ${c.green}✓${c.reset} agents/`);
   console.log(`    ${c.green}✓${c.reset} commands/`);
+  console.log(`    ${c.green}✓${c.reset} bin/`);
 
   // commands also into ~/.claude/commands/kto/ so Claude Code discovers them
   ensureDir(commandsDir);
@@ -234,8 +236,12 @@ function installClaude(isGlobal) {
 
 function installOpencode(isGlobal) {
   const base = isGlobal ? getOpencodeGlobalDir() : getOpencodeLocalDir();
+  const ktoDir = path.join(base, 'kto');
 
   console.log(`\n  ${c.blue}OpenCode${c.reset} → ${c.dim}${base}${c.reset}\n`);
+
+  copyDir(path.join(PACKAGE_ROOT, 'bin'), path.join(ktoDir, 'bin'));
+  console.log(`    ${c.green}✓${c.reset} kto/bin/`);
 
   // Agents (converted: strip tools:, color:)
   const agentsDir = path.join(base, 'agents');
@@ -281,6 +287,11 @@ function uninstall(runtimes, isGlobal) {
       });
     } else if (runtime === 'opencode') {
       const base = isGlobal ? getOpencodeGlobalDir() : getOpencodeLocalDir();
+      const ktoDir = path.join(base, 'kto');
+      if (fs.existsSync(ktoDir)) {
+        fs.rmSync(ktoDir, { recursive: true });
+        console.log(`  ${c.yellow}✗${c.reset} removed ${ktoDir}`);
+      }
       ['agents', 'commands'].forEach(sub => {
         const dir = path.join(base, sub);
         if (!fs.existsSync(dir)) return;

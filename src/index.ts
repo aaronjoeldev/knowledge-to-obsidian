@@ -5,7 +5,7 @@
  */
 
 export type { KnowledgeGraph, EnrichedKnowledgeGraph, RawKnowledge } from './types.js';
-export type { KtoConfig, KtoAgentsConfig } from './config.js';
+export type { KtoConfig, KtoAgentsConfig, KtoProvider } from './config.js';
 export { loadConfig, CONFIG_DEFAULTS } from './config.js';
 export {
   validateKnowledgeGraph,

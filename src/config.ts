@@ -10,9 +10,30 @@ export interface KtoAgentsConfig {
   change_detector: string;
 }
 
+export type KtoProvider =
+  | 'anthropic'
+  | 'bedrock'
+  | 'vertex'
+  | 'foundry'
+  | 'openrouter'
+  | 'openai/codex'
+  | 'glm';
+
+export const KTO_PROVIDERS: readonly KtoProvider[] = [
+  'anthropic',
+  'bedrock',
+  'vertex',
+  'foundry',
+  'openrouter',
+  'openai/codex',
+  'glm',
+];
+
 export interface KtoConfig {
   /** Absolute path to the Obsidian vault root. */
   vault_path: string;
+  /** Preferred provider/runtime family for this repo. */
+  provider: KtoProvider;
   /** Stable project ID used in all entity IDs, e.g. "MY-PROJECT". */
   project_id: string;
   /** Subfolder inside vault where this project's notes live. */
@@ -29,6 +50,7 @@ export interface KtoConfig {
 
 export const CONFIG_DEFAULTS: KtoConfig = {
   vault_path: '',
+  provider: 'anthropic',
   project_id: 'PROJECT',
   obsidian_subfolder: 'Projects/PROJECT',
   output_dir: '.kto',
@@ -117,6 +139,10 @@ function validateAndReturn(
 ): KtoConfig {
   if (typeof config.vault_path !== 'string') {
     throw new Error(`Invalid config at ${configPath}: vault_path must be a string`);
+  }
+
+  if (typeof config.provider !== 'string' || !KTO_PROVIDERS.includes(config.provider as KtoProvider)) {
+    throw new Error(`Invalid config at ${configPath}: provider must be one of ${KTO_PROVIDERS.join(', ')}`);
   }
 
   const vaultPath = config.vault_path.trim();
