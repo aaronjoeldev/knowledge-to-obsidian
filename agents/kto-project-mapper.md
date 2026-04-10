@@ -49,18 +49,32 @@ Set `OUTPUT_DIR` to `output_dir` from the parsed config. If `output_dir` is miss
 </step>
 
 <step name="discover_files">
-Enumerate all source files, excluding standard noise directories:
+Enumerate all source files, excluding dependency, build, cache, and generated-content directories:
 
 ```bash
 find . -type f \
   -not -path '*/node_modules/*' \
   -not -path '*/.git/*' \
+  -not -path '*/.next/*' \
+  -not -path '*/.nuxt/*' \
+  -not -path '*/.svelte-kit/*' \
+  -not -path '*/.turbo/*' \
+  -not -path '*/.cache/*' \
+  -not -path '*/.parcel-cache/*' \
+  -not -path '*/.vercel/*' \
+  -not -path '*/vendor/*' \
+  -not -path '*/target/*' \
+  -not -path '*/out/*' \
   -not -path '*/dist/*' \
   -not -path '*/build/*' \
   -not -path "*/${OUTPUT_DIR}/*" \
   -not -path '*/coverage/*' \
+  -not -path '*/generated/*' \
+  -not -path '*/__generated__/*' \
   | sort
 ```
+
+Do not include files from dependency/vendor folders, framework build outputs, coverage artifacts, caches, or generated code directories in `knowledge.json`.
 
 Classify each file:
 - `source` — `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.go`, `.rs`, `.java`, `.rb`, `.swift`, `.kt`, `.cs`, `.cpp`, `.c`

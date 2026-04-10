@@ -50,6 +50,21 @@ Compare modification times: only include files newer than `{output_dir}/enriched
 find . -newer "$OUTPUT_DIR/enriched_knowledge.json" -type f \
   -not -path '*/node_modules/*' \
   -not -path '*/.git/*' \
+  -not -path '*/.next/*' \
+  -not -path '*/.nuxt/*' \
+  -not -path '*/.svelte-kit/*' \
+  -not -path '*/.turbo/*' \
+  -not -path '*/.cache/*' \
+  -not -path '*/.parcel-cache/*' \
+  -not -path '*/.vercel/*' \
+  -not -path '*/vendor/*' \
+  -not -path '*/target/*' \
+  -not -path '*/out/*' \
+  -not -path '*/dist/*' \
+  -not -path '*/build/*' \
+  -not -path '*/coverage/*' \
+  -not -path '*/generated/*' \
+  -not -path '*/__generated__/*' \
   -not -path "*/$OUTPUT_DIR/*" \
   2>/dev/null
 ```
