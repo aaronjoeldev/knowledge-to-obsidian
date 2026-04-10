@@ -48,20 +48,24 @@ Important fields:
 
 ## Step 2 — Gather required information
 
-Ask the user (using AskUserQuestion or single prompts where appropriate):
+**Continue automatically after getting the init context** — do not wait for user confirmation to proceed.
 
-1. **Vault path**: `What is the absolute path to your Obsidian vault? [current: {init_context.defaults.vault_path}]`
-2. **Project ID**: `What short ID should be used for this project? [current: {init_context.defaults.project_id}]`
-3. **Vault subfolder**: `What subfolder inside the vault should kto use? [current: {init_context.defaults.obsidian_subfolder}]`
-4. **Output directory**: `Where should kto write its output files? [current: {init_context.defaults.output_dir}]`
+Ask the user (using AskUserQuestion):
+
+1. **Vault path**: `What is the absolute path to your Obsidian vault? Example: /Users/yourname/Documents/Obsidian/MyVault. Press Enter to keep empty and configure later (required for /kto:analyze). [current: {init_context.defaults.vault_path}]`
+2. **Project ID**: `What short ID should be used for this project? Use uppercase letters, numbers, and dashes only. Example: MY-PROJECT. [current: {init_context.defaults.project_id}]`
+3. **Vault subfolder**: `What subfolder inside the vault should kto use? Example: Projects/MY-PROJECT. [current: {init_context.defaults.obsidian_subfolder}]`
+4. **Output directory**: `Where should kto write its output files? This is relative to your project root. Example: .kto. [current: {init_context.defaults.output_dir}]`
 
 If the user presses Enter, keep the current/default value.
 
+**After asking each question, immediately proceed to the next step** — do not pause or emit completion messages between questions.
+
 ## Step 3 — Provider selection
 
-Always show a provider picker.
+**Continue automatically after Step 2** — do not wait for confirmation.
 
-Use AskUserQuestion with **all** `init_context.providerOptions`, not only detected ones.
+Always show a provider picker using AskUserQuestion with **all** `init_context.providerOptions`, not only detected ones.
 
 Rules:
 
@@ -79,13 +83,15 @@ Header:
 
 - `Provider`
 
-After the user picks a provider, store it as `selected_provider`.
+**Immediately after the user answers**, proceed to Step 4 — do not pause.
 
 If `selected_provider !== "anthropic"`, tell the user:
 
 - `inherit` is recommended unless you know the exact provider-native model IDs your runtime accepts.
 
 ## Step 4 — Refresh provider defaults from code
+
+**Continue automatically** — do not wait for user input.
 
 Run the helper again and use `selected_provider` to derive provider-aware defaults for the rest of the flow:
 
@@ -111,6 +117,8 @@ Parse the JSON result as `provider_defaults`.
 
 ## Step 5 — Model configuration (optional)
 
+**Continue automatically to the provider defaults refresh** — do not wait.
+
 Ask: `Do you want to customize which LLM model each agent uses? (y/N)`
 
 If yes, ask per-agent model with current defaults from `provider_defaults.agents`:
@@ -120,6 +128,8 @@ If yes, ask per-agent model with current defaults from `provider_defaults.agents
 - Obsidian Sync (`obsidian_sync`) — templated writing
 - Change Detector (`change_detector`) — fast, targeted
 
+**Immediately after each model answer**, proceed to the next question.
+
 If no, set `final_agents = provider_defaults.agents`.
 
 Then ask:
@@ -127,6 +137,8 @@ Then ask:
 - `Do you want to set per-agent fallback models? (y/N)`
 
 If yes, ask per-agent fallback values using `provider_defaults.model_fallbacks` as defaults.
+**Immediately after each fallback answer**, proceed to the next question or Step 6.
+
 If no, set `final_fallbacks = provider_defaults.model_fallbacks`.
 
 Important:

@@ -40,6 +40,8 @@ Use `.kto/config.json` as the authoritative project config. Use `output_dir` fro
 
 ## Phase 1 — Project Mapper
 
+**Continue automatically after pre_check passes** — do not wait for user confirmation.
+
 Spawn the `kto-project-mapper` agent with the current working directory as input.
 
 The agent writes `{output_dir}/knowledge.json`.
@@ -51,7 +53,11 @@ test -f "$OUTPUT_DIR/knowledge.json" && echo "OK" || echo "FAILED"
 
 If FAILED: Report error and stop. Do not proceed to Phase 2.
 
+**Immediately after verification passes**, proceed to Phase 2 — do not wait.
+
 ## Phase 2 — Graph Builder
+
+**Continue automatically** — do not wait for user input.
 
 Spawn the `kto-graph-builder` agent.
 
@@ -62,7 +68,11 @@ Verify:
 test -f "$OUTPUT_DIR/enriched_knowledge.json" && echo "OK" || echo "FAILED"
 ```
 
+**Immediately after verification passes**, proceed to Phase 3 — do not pause.
+
 ## Phase 3 — Obsidian Sync
+
+**Continue automatically** — do not wait.
 
 Spawn the `kto-obsidian-sync` agent.
 
