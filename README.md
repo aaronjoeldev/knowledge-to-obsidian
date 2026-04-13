@@ -129,6 +129,9 @@ Claude Code command names use `:`. OpenCode uses `-`.
 | Incremental update | `/kto:diff [files...]` | `/kto-diff [files...]` |
 | Vault sync from existing graph | `/kto:sync` | `/kto-sync` |
 | Wiki lint/coherence check | `/kto:lint` | `/kto-lint` |
+| Artifact/freshness status | `/kto:status` | `/kto-status` |
+| Code context lookup | `/kto:context <locator>` | `/kto-context <locator>` |
+| Change impact analysis | `/kto:impact <target>` | `/kto-impact <target>` |
 | Query wiki (+ optional writeback) | `/kto:query "question"` | `/kto-query "question"` |
 
 When to use what:
@@ -137,6 +140,9 @@ When to use what:
 - **diff**: regular development after code changes
 - **sync**: regenerate vault notes from existing `enriched_knowledge.json` only
 - **lint**: validate wiki consistency (links/index/run-log/coherence) before or after sync
+- **status**: inspect config/artifact health and freshness without running the pipeline
+- **context**: "what is this and where is it used?" for features, modules, or symbols
+- **impact**: "what breaks if I change this?" for paths or symbols
 - **query**: answer questions from wiki artifacts; writeback is explicit opt-in only
 
 `/kto:init` now uses a code-backed helper (`bin/kto-tools.cjs`) to detect provider signals and build defaults. It always shows the full provider picker, with detected/recommended options surfaced first. If you pick a non-Anthropic provider (Bedrock, Vertex, Foundry, OpenRouter, OpenAI/Codex, GLM/Z.AI), the safest default is usually `"inherit"` so kto follows the current runtime/provider model instead of forcing Anthropic model IDs.
@@ -246,6 +252,9 @@ Typical embedding cases:
 - `runner.diff(changedFiles)`
 - `runner.sync()`
 - `runner.lint()`
+- `runner.status()`
+- `runner.context(locator)` — feature/module/symbol lookup
+- `runner.impact(target)` — change impact analysis
 - `runner.queryWiki(question, { writeback?, targetPath? })`
 
 Example:

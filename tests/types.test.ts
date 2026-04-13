@@ -8,13 +8,20 @@ import type {
   KnowledgeSecurity,
   KnowledgeSecurityThreat,
   KnowledgeRelation,
+  KnowledgeIndexV2,
   KnowledgeGraph,
   EnrichedKnowledgeGraph,
+  IndexReferenceType,
   RelationType,
   FeatureStatus,
   Criticality,
 } from '../src/types.js';
-import { CRITICALITY_VALUES, FEATURE_STATUS_VALUES, RELATION_TYPE_VALUES } from '../src/types.js';
+import {
+  CRITICALITY_VALUES,
+  FEATURE_STATUS_VALUES,
+  RELATION_TYPE_VALUES,
+  INDEX_REFERENCE_TYPE_VALUES,
+} from '../src/types.js';
 
 describe('Knowledge Model Types', () => {
   it('KnowledgeProject has required fields', () => {
@@ -115,8 +122,58 @@ describe('Knowledge Model Types', () => {
       relations: [],
       enriched_at: '2026-04-07T00:00:00Z',
       version: '1.0',
+      index_v2: {
+        version: '2',
+        generated_at: '2026-04-07T00:05:00Z',
+      },
     };
     expect(graph.enriched_at).toBe('2026-04-07T00:00:00Z');
+    expect(graph.index_v2?.version).toBe('2');
+  });
+
+  it('KnowledgeIndexV2 accepts minimal additive navigation metadata', () => {
+    const referenceType: IndexReferenceType = 'calls';
+    const index: KnowledgeIndexV2 = {
+      version: '2',
+      generated_at: '2026-04-13T10:00:00Z',
+      symbols: [
+        {
+          id: 'symbol-auth-login-handler',
+          name: 'loginHandler',
+          kind: 'function',
+          path: 'src/auth/login.ts',
+          module_id: 'MODULE-AuthService',
+          feature_ids: ['FEAT-001'],
+        },
+      ],
+      references: [
+        {
+          from_symbol_id: 'symbol-auth-login-handler',
+          to_symbol_id: 'symbol-auth-session-check',
+          type: referenceType,
+        },
+      ],
+      processes: [
+        {
+          id: 'process-login',
+          name: 'Login Flow',
+          entry_points: ['src/auth/login.ts'],
+          symbol_ids: ['symbol-auth-login-handler'],
+          feature_ids: ['FEAT-001'],
+        },
+      ],
+      clusters: [
+        {
+          id: 'cluster-auth',
+          name: 'Authentication',
+          module_ids: ['MODULE-AuthService'],
+          feature_ids: ['FEAT-001'],
+        },
+      ],
+    };
+
+    expect(index.symbols?.[0]?.module_id).toBe('MODULE-AuthService');
+    expect(index.processes?.[0]?.entry_points).toContain('src/auth/login.ts');
   });
 
   it('KnowledgeFeature accepts optional how_it_works field', () => {
@@ -208,5 +265,6 @@ describe('Knowledge Model Types', () => {
     expect(CRITICALITY_VALUES).toEqual(['low', 'medium', 'high']);
     expect(FEATURE_STATUS_VALUES).toEqual(['planned', 'implemented']);
     expect(RELATION_TYPE_VALUES).toContain('implemented_by');
+    expect(INDEX_REFERENCE_TYPE_VALUES).toEqual(['calls', 'imports']);
   });
 });

@@ -1,0 +1,12 @@
+---
+alwaysApply: true
+---
+
+# kto Cursor Rules
+
+- Read `AGENTS.md` and `GUARDRAILS.md` before making non-trivial changes.
+- Treat `agents/*.md` and `commands/kto/*.md` as executable product behavior, not passive documentation.
+- Keep generated markdown English-only.
+- Preserve AUTO-GENERATED block safety.
+- Keep the mandatory core-page contract intact: `Overview.md`, `Architecture.md`, `Index.md`, `Run_Log.md`.
+- For behavior changes, validate with `npm test` and `npm run typecheck`.

@@ -38,11 +38,39 @@ Return a concise answer grounded in artifacts. Include explicit source refs:
 Only execute when `writeback=true` and `target` is provided.
 
 Writeback constraints:
-- deterministic update scope (single target page)
+- Target page MUST be under `Synthesis/` directory
+- Target page MUST have `type: synthesis` frontmatter
+- Deterministic update scope (single target page)
 - AUTO-GENERATED block edits only
-- no broad regeneration of unrelated synthesis pages
-- append audit entry to `Run_Log.md` containing: timestamp, query hash, target page, changed sections
-- any generated/updated headings, labels, placeholders, and synthesis text must be English-only
+- No broad regeneration of unrelated synthesis pages
+- Append audit entry to `Run_Log.md` containing: timestamp, query hash, target page, changed sections
+- Any generated/updated headings, labels, placeholders, and synthesis text must be English-only
+
+Writeback idempotency rules:
+1. Compute `identity_key = hash(kind + query_hash + page_target)`
+2. If page with same `identity_key` exists:
+   - If `content_hash` matches → noop (return existing page)
+   - Else → update page in place, refresh `content_hash`, `last_verified`
+3. If page does not exist:
+   - Check for conflicting page with same `kind + query_hash` but different target
+   - If conflict → return existing page, do NOT create duplicate
+   - Else → create new page with stable identity
+
+Audit log entry format (append to `Run_Log.md`):
+```md
+### QUERY_WRITEBACK {audit_id}
+- Timestamp: {timestamp}
+- Target: [[{target_without_md}]]
+- Kind: {kind}
+- Action: {created|updated|noop}
+- Query Hash: {query_hash}
+- Identity Key: {identity_key}
+- Source Snapshot: {source_snapshot.enriched_at}
+- Content Hash: {content_hash}
+- Changed Sections: {sections}
+```
+
+Where `audit_id = hash(identity_key + source_snapshot.enriched_at)`.
 </step>
 
 <step name="result">

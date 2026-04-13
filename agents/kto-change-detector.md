@@ -89,6 +89,8 @@ Compare against existing `third_parties[]` — add new packages, remove deleted 
 Write the updated `${OUTPUT_DIR}/enriched_knowledge.json` with:
 - `enriched_at` updated to current timestamp
 - Only affected entities updated (all others preserved as-is)
+- If `index_v2` exists, update only affected symbols/references/processes/clusters; do NOT regenerate the entire index block
+- If `meta` exists, update `meta.last_sync_at` and optionally `meta.staleness.wiki_from_enriched` to reflect fresh state
 
 **ALWAYS use the Write tool.**
 </step>
@@ -104,6 +106,12 @@ Update index/log artifacts only as needed for coherence:
 - `Index.md`: update links/counts when affected entities change index membership
 - `Run_Log.md`: append deterministic entry for this diff run
 - Do NOT regenerate unrelated synthesis pages (e.g., Architecture/Overview narratives) unless impacted by changed inputs
+
+If `index_v2` exists:
+- Update affected symbol paths if module structure changed
+- Mark affected processes as needing refresh (do not regenerate here, just flag)
+If `meta.staleness` exists:
+- Set `wiki_from_enriched.status = 'fresh'` and `checked_at` to current timestamp
 </step>
 
 </process>
@@ -115,11 +123,15 @@ Update index/log artifacts only as needed for coherence:
 - If a changed file is not found in any module, log it as "unmapped file" and skip
 - MUST complete in under 30 agentic turns (it's a fast-path operation)
 - Keep index/log pages coherent without broad regeneration
+- If `index_v2` exists, update it incrementally; do NOT regenerate the entire block
+- If `meta.staleness` exists, update it to reflect fresh wiki state
 </rules>
 
 <success_criteria>
 - [ ] Affected entities identified
 - [ ] enriched_knowledge.json updated with new enriched_at
+- [ ] If index_v2 exists: affected symbols/references/processes/clusters updated incrementally
+- [ ] If meta.staleness exists: wiki_from_enriched.status set to 'fresh' with current checked_at
 - [ ] Affected Obsidian notes updated (AUTO-GENERATED blocks only)
 - [ ] Return: affected_modules[], affected_features[], files_updated
 </success_criteria>

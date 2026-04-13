@@ -1,0 +1,45 @@
+kto — Knowledge to Obsidian
+
+Read first:
+- AGENTS.md — canonical repo guidance for humans and AI agents
+- GUARDRAILS.md — safety and invariants
+- README.md — product overview and user-facing workflow
+
+Operational docs:
+- RUNBOOK.md — commands and debugging shortcuts
+- TESTING.md — validation commands and test focus areas
+- CONTRIBUTING.md — contribution expectations
+
+Key code files:
+- package.json — scripts and package metadata
+- bin/install.cjs — installer and runtime asset setup
+- bin/kto-tools.cjs — provider detection and init context helper
+- src/index.ts — runner orchestration
+- src/config.ts — config loading and validation
+- src/knowledge-validator.ts — graph/wiki contract validation
+- src/types.ts — knowledge model types
+
+Prompt/runtime assets:
+- commands/kto/*.md — slash-command workflows
+- agents/*.md — runtime agent contracts
+
+Key tests:
+- tests/config.test.ts
+- tests/kto-tools.test.ts
+- tests/types.test.ts
+- tests/knowledge-validator.test.ts
+- tests/core-pages-navigation.test.ts
+- tests/english-only-generated-content.test.ts
+- tests/index.test.ts
+
+Important invariants:
+- `.kto/config.json` is authoritative
+- generated markdown is English-only
+- only AUTO-GENERATED blocks may be overwritten
+- core pages are mandatory: Overview, Architecture, Index, Run_Log
+- writeback must stay explicit
+
+Ignore by default unless the task requires them:
+- briefing/
+- node_modules/
+- dist/

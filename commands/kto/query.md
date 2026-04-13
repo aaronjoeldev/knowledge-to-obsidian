@@ -17,6 +17,7 @@ Answer user questions from wiki artifacts (`{output_dir}/enriched_knowledge.json
 - Optional flags:
   - `--writeback=true|false` (default: false)
   - `--target=<relative_page_path>` (required only when writeback=true)
+  - `--kind=<synthesis_kind>` (optional, defaults to 'open_questions'; one of: comparison, architecture_summary, security_review, open_questions, decision_note)
 </arguments>
 
 <pre_check>
@@ -35,11 +36,18 @@ If config parsing fails: ".kto/config.json is invalid JSON. Fix it or run /kto:i
 Spawn `kto-query-writer` with:
 - user query
 - writeback mode (`false` by default)
-- optional target page
+- optional target page (required when writeback=true, must be under `Synthesis/`)
+- optional kind (defaults to 'open_questions' when writeback=true)
 
 Rules:
 - If writeback=false: read-only answer with source references.
-- If writeback=true: require explicit target and append deterministic audit entry to `Run_Log.md`.
+- If writeback=true:
+  - Require explicit target under `Synthesis/` directory
+  - Validate target has `type: synthesis` frontmatter
+  - Compute stable identity via `identity_key = hash(kind + query_hash + page_target)`
+  - If page exists with matching identity_key and content_hash → noop
+  - Else → create/update page with deterministic template
+  - Append deterministic audit entry to `Run_Log.md`
 - Generated wiki writeback content is always English, regardless of user language.
 </execution>
 

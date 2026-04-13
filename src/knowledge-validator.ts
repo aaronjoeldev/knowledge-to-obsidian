@@ -1,9 +1,14 @@
 import {
   CRITICALITY_VALUES,
   FEATURE_STATUS_VALUES,
+  INDEX_REFERENCE_TYPE_VALUES,
+  KNOWLEDGE_STALENESS_STATUS_VALUES,
   RELATION_TYPE_VALUES,
+  SYNTHESIS_PAGE_KIND_VALUES,
+  type EnrichedKnowledgeGraph,
   type KnowledgeGraph,
   type RawKnowledge,
+  type KnowledgeSynthesisPage,
 } from './types.js';
 
 export interface ValidationResult {
@@ -72,6 +77,18 @@ function isValidWikiPageTarget(value: string): boolean {
     return false;
   }
   return trimmed.endsWith('.md');
+}
+
+function isValidRelativeRepoPath(value: string): boolean {
+  if (!isNonEmptyString(value)) return false;
+  const trimmed = value.trim();
+  if (trimmed.startsWith('/') || trimmed.startsWith('\\') || WINDOWS_ABSOLUTE_PATH_PATTERN.test(trimmed)) {
+    return false;
+  }
+  if (trimmed.split(/[\\/]/).includes('..')) {
+    return false;
+  }
+  return true;
 }
 
 function ensureArray(errors: string[], fieldPath: string, value: unknown): value is unknown[] {
@@ -518,6 +535,272 @@ export function validateKnowledgeGraph(graph: KnowledgeGraph): ValidationResult 
   return { valid: errors.length === 0, errors, warnings };
 }
 
+export function validateEnrichedKnowledgeGraph(graph: EnrichedKnowledgeGraph): ValidationResult {
+  const baseValidation = validateKnowledgeGraph(graph);
+  const errors = [...baseValidation.errors];
+  const warnings = [...baseValidation.warnings];
+
+  validateRequiredText(errors, 'enriched_at', graph.enriched_at);
+  if (isNonEmptyString(graph.enriched_at) && !isValidIsoTimestamp(graph.enriched_at)) {
+    errors.push('enriched_at must be a valid ISO-8601 timestamp');
+  }
+
+  validateRequiredText(errors, 'version', graph.version, { rejectPlaceholders: true });
+
+  validateEnrichedMeta(errors, warnings, graph);
+  validateIndexV2(errors, graph);
+  validateSynthesisPages(errors, warnings, graph);
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+function validateEnrichedMeta(errors: string[], warnings: string[], graph: EnrichedKnowledgeGraph): void {
+  if (graph.meta === undefined) return;
+  if (typeof graph.meta !== 'object' || graph.meta === null || Array.isArray(graph.meta)) {
+    errors.push('meta must be an object when provided');
+    return;
+  }
+
+  if (graph.meta.knowledge_scanned_at !== undefined) {
+    validateRequiredText(errors, 'meta.knowledge_scanned_at', graph.meta.knowledge_scanned_at);
+    if (isNonEmptyString(graph.meta.knowledge_scanned_at) && !isValidIsoTimestamp(graph.meta.knowledge_scanned_at)) {
+      errors.push('meta.knowledge_scanned_at must be a valid ISO-8601 timestamp');
+    }
+  }
+
+  if (graph.meta.last_sync_at !== undefined) {
+    validateRequiredText(errors, 'meta.last_sync_at', graph.meta.last_sync_at);
+    if (isNonEmptyString(graph.meta.last_sync_at) && !isValidIsoTimestamp(graph.meta.last_sync_at)) {
+      errors.push('meta.last_sync_at must be a valid ISO-8601 timestamp');
+    }
+  }
+
+  if (
+    isNonEmptyString(graph.meta.knowledge_scanned_at)
+    && isNonEmptyString(graph.enriched_at)
+    && isValidIsoTimestamp(graph.meta.knowledge_scanned_at)
+    && isValidIsoTimestamp(graph.enriched_at)
+    && Date.parse(graph.meta.knowledge_scanned_at) > Date.parse(graph.enriched_at)
+  ) {
+    errors.push('meta.knowledge_scanned_at must be less than or equal to enriched_at');
+  }
+
+  if (graph.meta.staleness !== undefined) {
+    if (typeof graph.meta.staleness !== 'object' || graph.meta.staleness === null || Array.isArray(graph.meta.staleness)) {
+      errors.push('meta.staleness must be an object when provided');
+      return;
+    }
+
+    validateStalenessInfo(errors, warnings, 'meta.staleness.enriched_from_knowledge', graph.meta.staleness.enriched_from_knowledge);
+    validateStalenessInfo(errors, warnings, 'meta.staleness.wiki_from_enriched', graph.meta.staleness.wiki_from_enriched);
+  }
+}
+
+function validateStalenessInfo(
+  errors: string[],
+  warnings: string[],
+  fieldPath: string,
+  value: { status: unknown; checked_at?: unknown; reason?: unknown } | undefined,
+): void {
+  if (value === undefined) return;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    errors.push(`${fieldPath} must be an object when provided`);
+    return;
+  }
+
+  validateRequiredText(errors, `${fieldPath}.status`, value.status);
+  if (!KNOWLEDGE_STALENESS_STATUS_VALUES.includes(value.status as (typeof KNOWLEDGE_STALENESS_STATUS_VALUES)[number])) {
+    errors.push(`${fieldPath}.status must be one of: ${KNOWLEDGE_STALENESS_STATUS_VALUES.join(', ')}`);
+  }
+
+  if (value.checked_at !== undefined) {
+    validateRequiredText(errors, `${fieldPath}.checked_at`, value.checked_at);
+    if (isNonEmptyString(value.checked_at) && !isValidIsoTimestamp(value.checked_at)) {
+      errors.push(`${fieldPath}.checked_at must be a valid ISO-8601 timestamp`);
+    }
+  }
+
+  if (value.reason !== undefined) {
+    validateRequiredText(errors, `${fieldPath}.reason`, value.reason, { rejectPlaceholders: true });
+    if (isNonEmptyString(value.reason) && hasGermanDefaultToken(value.reason)) {
+      warnings.push(`${fieldPath}.reason should remain English-only for generated metadata`);
+    }
+  }
+}
+
+function validateIndexV2(errors: string[], graph: EnrichedKnowledgeGraph): void {
+  const indexV2 = graph.index_v2;
+  if (indexV2 === undefined) return;
+  if (typeof indexV2 !== 'object' || indexV2 === null || Array.isArray(indexV2)) {
+    errors.push('index_v2 must be an object when provided');
+    return;
+  }
+
+  validateRequiredText(errors, 'index_v2.version', indexV2.version);
+  if (indexV2.version !== '2') {
+    errors.push('index_v2.version must be exactly "2"');
+  }
+
+  validateRequiredText(errors, 'index_v2.generated_at', indexV2.generated_at);
+  if (isNonEmptyString(indexV2.generated_at) && !isValidIsoTimestamp(indexV2.generated_at)) {
+    errors.push('index_v2.generated_at must be a valid ISO-8601 timestamp');
+  }
+
+  if (
+    isNonEmptyString(indexV2.generated_at)
+    && isNonEmptyString(graph.enriched_at)
+    && isValidIsoTimestamp(indexV2.generated_at)
+    && isValidIsoTimestamp(graph.enriched_at)
+    && Date.parse(indexV2.generated_at) < Date.parse(graph.enriched_at)
+  ) {
+    errors.push('index_v2.generated_at must be greater than or equal to enriched_at');
+  }
+
+  const featureIds = new Set(graph.features.map(feature => feature.id));
+  const moduleIds = new Set(graph.modules.map(mod => mod.id));
+  const symbolIds = new Set<string>();
+  const processIds = new Set<string>();
+  const clusterIds = new Set<string>();
+  const referenceKeys = new Set<string>();
+
+  if (indexV2.symbols !== undefined && ensureArray(errors, 'index_v2.symbols', indexV2.symbols)) {
+    indexV2.symbols.forEach((symbol, symbolIndex) => {
+      const symbolPath = `index_v2.symbols[${symbolIndex}]`;
+      validateRequiredText(errors, `${symbolPath}.id`, symbol.id, { rejectPlaceholders: true });
+      validateRequiredText(errors, `${symbolPath}.name`, symbol.name, { rejectPlaceholders: true });
+      validateRequiredText(errors, `${symbolPath}.kind`, symbol.kind, { rejectPlaceholders: true });
+      validateRequiredText(errors, `${symbolPath}.path`, symbol.path, { rejectPlaceholders: true });
+
+      if (isNonEmptyString(symbol.id)) {
+        if (symbolIds.has(symbol.id)) {
+          errors.push(`duplicate index_v2 symbol id: ${symbol.id}`);
+        }
+        symbolIds.add(symbol.id);
+      }
+
+      if (isNonEmptyString(symbol.path) && !isValidRelativeRepoPath(symbol.path)) {
+        errors.push(`${symbolPath}.path must be a relative repo path without traversal`);
+      }
+
+      if (symbol.module_id !== undefined) {
+        validateRequiredText(errors, `${symbolPath}.module_id`, symbol.module_id, { rejectPlaceholders: true });
+        if (isNonEmptyString(symbol.module_id) && !moduleIds.has(symbol.module_id)) {
+          errors.push(`${symbolPath}.module_id references unknown module id: ${symbol.module_id}`);
+        }
+      }
+
+      if (symbol.feature_ids !== undefined && ensureArray(errors, `${symbolPath}.feature_ids`, symbol.feature_ids)) {
+        symbol.feature_ids.forEach((featureId, featureIdIndex) => {
+          validateRequiredText(errors, `${symbolPath}.feature_ids[${featureIdIndex}]`, featureId, { rejectPlaceholders: true });
+          if (isNonEmptyString(featureId) && !featureIds.has(featureId)) {
+            errors.push(`${symbolPath}.feature_ids[${featureIdIndex}] references unknown feature id: ${featureId}`);
+          }
+        });
+      }
+    });
+  }
+
+  if (indexV2.references !== undefined && ensureArray(errors, 'index_v2.references', indexV2.references)) {
+    indexV2.references.forEach((reference, referenceIndex) => {
+      const referencePath = `index_v2.references[${referenceIndex}]`;
+      validateRequiredText(errors, `${referencePath}.from_symbol_id`, reference.from_symbol_id, { rejectPlaceholders: true });
+      validateRequiredText(errors, `${referencePath}.to_symbol_id`, reference.to_symbol_id, { rejectPlaceholders: true });
+      validateRequiredText(errors, `${referencePath}.type`, reference.type, { rejectPlaceholders: true });
+
+      if (isNonEmptyString(reference.from_symbol_id) && !symbolIds.has(reference.from_symbol_id)) {
+        errors.push(`${referencePath}.from_symbol_id references unknown symbol id: ${reference.from_symbol_id}`);
+      }
+      if (isNonEmptyString(reference.to_symbol_id) && !symbolIds.has(reference.to_symbol_id)) {
+        errors.push(`${referencePath}.to_symbol_id references unknown symbol id: ${reference.to_symbol_id}`);
+      }
+      if (!INDEX_REFERENCE_TYPE_VALUES.includes(reference.type)) {
+        errors.push(`${referencePath}.type must be one of: ${INDEX_REFERENCE_TYPE_VALUES.join(', ')}`);
+      }
+
+      const referenceKey = `${reference.from_symbol_id}|${reference.type}|${reference.to_symbol_id}`;
+      if (referenceKeys.has(referenceKey)) {
+        errors.push(`duplicate index_v2 reference detected: ${referenceKey}`);
+      }
+      referenceKeys.add(referenceKey);
+    });
+  }
+
+  if (indexV2.processes !== undefined && ensureArray(errors, 'index_v2.processes', indexV2.processes)) {
+    indexV2.processes.forEach((process, processIndex) => {
+      const processPath = `index_v2.processes[${processIndex}]`;
+      validateRequiredText(errors, `${processPath}.id`, process.id, { rejectPlaceholders: true });
+      validateRequiredText(errors, `${processPath}.name`, process.name, { rejectPlaceholders: true });
+
+      if (isNonEmptyString(process.id)) {
+        if (processIds.has(process.id)) {
+          errors.push(`duplicate index_v2 process id: ${process.id}`);
+        }
+        processIds.add(process.id);
+      }
+
+      if (ensureArray(errors, `${processPath}.entry_points`, process.entry_points)) {
+        process.entry_points.forEach((entryPoint, entryPointIndex) => {
+          validateRequiredText(errors, `${processPath}.entry_points[${entryPointIndex}]`, entryPoint, { rejectPlaceholders: true });
+          if (isNonEmptyString(entryPoint) && !isValidRelativeRepoPath(entryPoint)) {
+            errors.push(`${processPath}.entry_points[${entryPointIndex}] must be a relative repo path without traversal`);
+          }
+        });
+      }
+
+      if (process.symbol_ids !== undefined && ensureArray(errors, `${processPath}.symbol_ids`, process.symbol_ids)) {
+        process.symbol_ids.forEach((symbolId, symbolIdIndex) => {
+          validateRequiredText(errors, `${processPath}.symbol_ids[${symbolIdIndex}]`, symbolId, { rejectPlaceholders: true });
+          if (isNonEmptyString(symbolId) && !symbolIds.has(symbolId)) {
+            errors.push(`${processPath}.symbol_ids[${symbolIdIndex}] references unknown symbol id: ${symbolId}`);
+          }
+        });
+      }
+
+      if (process.feature_ids !== undefined && ensureArray(errors, `${processPath}.feature_ids`, process.feature_ids)) {
+        process.feature_ids.forEach((featureId, featureIdIndex) => {
+          validateRequiredText(errors, `${processPath}.feature_ids[${featureIdIndex}]`, featureId, { rejectPlaceholders: true });
+          if (isNonEmptyString(featureId) && !featureIds.has(featureId)) {
+            errors.push(`${processPath}.feature_ids[${featureIdIndex}] references unknown feature id: ${featureId}`);
+          }
+        });
+      }
+    });
+  }
+
+  if (indexV2.clusters !== undefined && ensureArray(errors, 'index_v2.clusters', indexV2.clusters)) {
+    indexV2.clusters.forEach((cluster, clusterIndex) => {
+      const clusterPath = `index_v2.clusters[${clusterIndex}]`;
+      validateRequiredText(errors, `${clusterPath}.id`, cluster.id, { rejectPlaceholders: true });
+      validateRequiredText(errors, `${clusterPath}.name`, cluster.name, { rejectPlaceholders: true });
+
+      if (isNonEmptyString(cluster.id)) {
+        if (clusterIds.has(cluster.id)) {
+          errors.push(`duplicate index_v2 cluster id: ${cluster.id}`);
+        }
+        clusterIds.add(cluster.id);
+      }
+
+      if (cluster.module_ids !== undefined && ensureArray(errors, `${clusterPath}.module_ids`, cluster.module_ids)) {
+        cluster.module_ids.forEach((moduleId, moduleIdIndex) => {
+          validateRequiredText(errors, `${clusterPath}.module_ids[${moduleIdIndex}]`, moduleId, { rejectPlaceholders: true });
+          if (isNonEmptyString(moduleId) && !moduleIds.has(moduleId)) {
+            errors.push(`${clusterPath}.module_ids[${moduleIdIndex}] references unknown module id: ${moduleId}`);
+          }
+        });
+      }
+
+      if (cluster.feature_ids !== undefined && ensureArray(errors, `${clusterPath}.feature_ids`, cluster.feature_ids)) {
+        cluster.feature_ids.forEach((featureId, featureIdIndex) => {
+          validateRequiredText(errors, `${clusterPath}.feature_ids[${featureIdIndex}]`, featureId, { rejectPlaceholders: true });
+          if (isNonEmptyString(featureId) && !featureIds.has(featureId)) {
+            errors.push(`${clusterPath}.feature_ids[${featureIdIndex}] references unknown feature id: ${featureId}`);
+          }
+        });
+      }
+    });
+  }
+}
+
 export function validateRawKnowledge(raw: RawKnowledge): ValidationResult {
   const errors: string[] = [];
 
@@ -563,4 +846,91 @@ export function validateRawKnowledge(raw: RawKnowledge): ValidationResult {
   }
 
   return { valid: errors.length === 0, errors, warnings: [] };
+}
+
+function validateSynthesisPages(
+  errors: string[],
+  warnings: string[],
+  graph: EnrichedKnowledgeGraph,
+): void {
+  if (graph.synthesis_pages === undefined) return;
+  if (!Array.isArray(graph.synthesis_pages)) {
+    errors.push('synthesis_pages must be an array when provided');
+    return;
+  }
+
+  const featureIds = new Set(graph.features.map(f => f.id));
+  const moduleIds = new Set(graph.modules.map(m => m.id));
+  const thirdPartyIds = new Set(graph.third_parties.map(t => t.id));
+  const knownPageTargets = new Set<string>();
+  graph.features.forEach(f => knownPageTargets.add(f.wiki?.page_target || ''));
+  graph.modules.forEach(m => knownPageTargets.add(m.wiki?.page_target || ''));
+  graph.third_parties.forEach(t => knownPageTargets.add(t.wiki?.page_target || ''));
+
+  const seenIdentityKeys = new Set<string>();
+
+  graph.synthesis_pages.forEach((page, pageIndex) => {
+    const pagePath = `synthesis_pages[${pageIndex}]`;
+    validateRequiredText(errors, `${pagePath}.id`, page.id, { rejectPlaceholders: true });
+    validateRequiredText(errors, `${pagePath}.kind`, page.kind, { rejectPlaceholders: true });
+    if (!SYNTHESIS_PAGE_KIND_VALUES.includes(page.kind as (typeof SYNTHESIS_PAGE_KIND_VALUES)[number])) {
+      errors.push(`${pagePath}.kind must be one of: ${SYNTHESIS_PAGE_KIND_VALUES.join(', ')}`);
+    }
+    validateRequiredText(errors, `${pagePath}.title`, page.title, { rejectPlaceholders: true });
+    validateRequiredText(errors, `${pagePath}.question`, page.question, { rejectPlaceholders: true });
+    validateRequiredText(errors, `${pagePath}.query_hash`, page.query_hash, { rejectPlaceholders: true });
+    validateRequiredText(errors, `${pagePath}.identity_key`, page.identity_key, { rejectPlaceholders: true });
+    validateRequiredText(errors, `${pagePath}.content_hash`, page.content_hash, { rejectPlaceholders: true });
+    validateRequiredText(errors, `${pagePath}.content_markdown`, page.content_markdown, { rejectPlaceholders: true });
+
+    if (page.source_entity_ids === undefined || !Array.isArray(page.source_entity_ids)) {
+      errors.push(`${pagePath}.source_entity_ids must be an array`);
+    } else {
+      page.source_entity_ids.forEach((id, idIndex) => {
+        if (!featureIds.has(id) && !moduleIds.has(id) && !thirdPartyIds.has(id)) {
+          errors.push(`${pagePath}.source_entity_ids[${idIndex}] references unknown entity id: ${id}`);
+        }
+      });
+    }
+
+    if (page.source_page_targets === undefined || !Array.isArray(page.source_page_targets)) {
+      errors.push(`${pagePath}.source_page_targets must be an array`);
+    } else {
+      page.source_page_targets.forEach((target, targetIndex) => {
+        if (!knownPageTargets.has(target)) {
+          errors.push(`${pagePath}.source_page_targets[${targetIndex}] references unknown page target: ${target}`);
+        }
+      });
+    }
+
+    if (page.source_snapshot === undefined) {
+      errors.push(`${pagePath}.source_snapshot is required`);
+    } else {
+      validateRequiredText(errors, `${pagePath}.source_snapshot.enriched_at`, page.source_snapshot.enriched_at);
+      validateRequiredText(errors, `${pagePath}.source_snapshot.version`, page.source_snapshot.version, { rejectPlaceholders: true });
+      if (page.source_snapshot.index_generated_at !== undefined) {
+        validateRequiredText(errors, `${pagePath}.source_snapshot.index_generated_at`, page.source_snapshot.index_generated_at);
+      }
+    }
+
+    if (page.wiki === undefined) {
+      errors.push(`${pagePath}.wiki is required`);
+    } else {
+      validateRequiredText(errors, `${pagePath}.wiki.page_target`, page.wiki.page_target, { rejectPlaceholders: true });
+      if (!page.wiki.page_target.startsWith('Synthesis/')) {
+        errors.push(`${pagePath}.wiki.page_target must be under Synthesis/ directory`);
+      }
+      if (page.wiki.source_refs === undefined || !Array.isArray(page.wiki.source_refs)) {
+        errors.push(`${pagePath}.wiki.source_refs must be an array`);
+      }
+      validateRequiredText(errors, `${pagePath}.wiki.last_verified`, page.wiki.last_verified);
+    }
+
+    if (isNonEmptyString(page.identity_key)) {
+      if (seenIdentityKeys.has(page.identity_key)) {
+        errors.push(`duplicate synthesis page identity_key: ${page.identity_key}`);
+      }
+      seenIdentityKeys.add(page.identity_key);
+    }
+  });
 }

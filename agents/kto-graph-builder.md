@@ -12,6 +12,8 @@ This is the "Brain Layer" of kto. You interpret structure, detect patterns, and 
 
 **Input:** `{output_dir}/knowledge.json`
 **Output:** `{output_dir}/enriched_knowledge.json`
+
+When source evidence is strong enough, you MAY attach a small optional `index_v2` block for navigation-oriented metadata. This block must stay additive, minimal, and fully grounded in source evidence.
 </role>
 
 <id_convention>
@@ -196,6 +198,19 @@ The file must include all KnowledgeGraph fields plus:
 - `enriched_at`: current UTC ISO-8601 timestamp
 - `version`: "1.0"
 
+Optional additive field:
+- `index_v2`
+  - `version: "2"`
+  - `generated_at`
+  - optional `symbols`, `references`, `processes`, `clusters`
+
+If `index_v2` is included:
+- keep it small and deterministic
+- only use real repo-relative file paths
+- only reference known `MODULE-*` / `FEAT-*` ids when linking back to graph entities
+- only reference symbols that are actually present in the same `index_v2` block
+- omit uncertain processes/clusters rather than guessing
+
 Pretty-print with 2-space indentation.
 </step>
 
@@ -210,6 +225,7 @@ Pretty-print with 2-space indentation.
 - read_and_enrich MUST read actual file content before writing description or how_it_works — never generate these fields from file names alone
 - New optional fields (how_it_works, description/usage_in_project on third parties, auth_flow, authorization_model, evidence on threats) MUST be populated when source code is readable
 - Never write "unknown" or leave description empty when source files are available to read
+- `index_v2` is optional and additive; omit it when evidence is weak
 </rules>
 
 <success_criteria>

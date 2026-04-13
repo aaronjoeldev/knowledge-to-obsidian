@@ -88,6 +88,8 @@ function validEnrichedGraph() {
     technologies: [],
     security: { threats: [], pii_flows: [], auth_model: 'JWT' },
     relations: [{ from: 'FEAT-001', to: 'MODULE-Auth', type: 'implemented_by' }],
+    enriched_at: '2026-04-13T10:00:00Z',
+    version: '1.0',
   };
 }
 
@@ -346,5 +348,84 @@ describe('KtoRunner model validation', () => {
     expect(result.error).toMatch(/Invalid enriched knowledge graph/i);
     expect(result.error).toMatch(/placeholder/i);
     expect(queryMock).not.toHaveBeenCalled();
+  });
+
+  it('reports status with recommended analyze when enriched artifact is missing', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+      }),
+    );
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'knowledge.json'),
+      JSON.stringify({
+        scanned_at: '2026-04-13T10:00:00Z',
+        root_path: TMP_DIR,
+        files: [],
+        imports: [],
+        exports: [],
+        entry_points: [],
+      }),
+    );
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR, skipModelValidation: true });
+    const result = await runner.status();
+
+    expect(result.success).toBe(false);
+    expect(result.config.valid).toBe(true);
+    expect(result.knowledge.valid).toBe(true);
+    expect(result.enrichedKnowledge.exists).toBe(false);
+    expect(result.recommendedAction).toBe('analyze');
+  });
+
+  it('reports status counts and freshness when artifacts are valid', async () => {
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'config.json'),
+      JSON.stringify({
+        vault_path: '/Users/test/Vault',
+        output_dir: '.kto',
+      }),
+    );
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'knowledge.json'),
+      JSON.stringify({
+        scanned_at: '2026-04-13T10:00:00Z',
+        root_path: TMP_DIR,
+        files: [],
+        imports: [],
+        exports: [],
+        entry_points: [],
+      }),
+    );
+    writeFileSync(
+      join(TMP_DIR, '.kto', 'enriched_knowledge.json'),
+      JSON.stringify({
+        ...validEnrichedGraph(),
+        enriched_at: '2026-04-13T10:01:00Z',
+        version: '1.0',
+        meta: {
+          knowledge_scanned_at: '2026-04-13T10:00:00Z',
+          staleness: {
+            enriched_from_knowledge: { status: 'fresh', checked_at: '2026-04-13T10:01:00Z' },
+            wiki_from_enriched: { status: 'unknown', checked_at: '2026-04-13T10:01:00Z' },
+          },
+        },
+      }),
+    );
+
+    const runner = new KtoRunner({ projectDir: TMP_DIR, skipModelValidation: true });
+    const result = await runner.status();
+
+    expect(result.success).toBe(true);
+    expect(result.enrichedKnowledge.valid).toBe(true);
+    expect(result.enrichedKnowledge.counts).toEqual({
+      features: 1,
+      modules: 2,
+      thirdParties: 1,
+    });
+    expect(result.freshness.enrichedFromKnowledge).toBe('fresh');
+    expect(result.recommendedAction).toBe('none');
   });
 });

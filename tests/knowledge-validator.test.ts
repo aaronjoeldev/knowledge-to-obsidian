@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  validateEnrichedKnowledgeGraph,
   validateKnowledgeGraph,
   validateRawKnowledge,
   isValidEntityId,
@@ -319,6 +320,302 @@ describe('validateKnowledgeGraph', () => {
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
     expect(result.warnings.some(w => w.includes('features[0].wiki.last_verified is older than 30 days'))).toBe(true);
+  });
+
+  it('accepts an optional valid index_v2 block on enriched graphs', () => {
+    const enriched = structuredClone(VALID_GRAPH) as KnowledgeGraph & {
+      enriched_at: string;
+      version: string;
+      index_v2: unknown;
+    };
+    enriched.enriched_at = '2026-04-13T10:00:00Z';
+    enriched.version = '1.0';
+    enriched.index_v2 = {
+      version: '2',
+      generated_at: '2026-04-13T10:01:00Z',
+      symbols: [
+        {
+          id: 'symbol-auth-index',
+          name: 'authIndex',
+          kind: 'module',
+          path: 'src/auth/index.ts',
+          module_id: 'MODULE-Auth',
+          feature_ids: ['FEAT-001'],
+        },
+      ],
+      references: [],
+      processes: [
+        {
+          id: 'process-auth-entry',
+          name: 'Auth Entry',
+          entry_points: ['src/auth/index.ts'],
+          symbol_ids: ['symbol-auth-index'],
+          feature_ids: ['FEAT-001'],
+        },
+      ],
+      clusters: [
+        {
+          id: 'cluster-auth',
+          name: 'Authentication',
+          module_ids: ['MODULE-Auth'],
+          feature_ids: ['FEAT-001'],
+        },
+      ],
+    };
+
+    const result = validateEnrichedKnowledgeGraph(enriched as any);
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('rejects index_v2 references to unknown modules, features, and symbols', () => {
+    const enriched = structuredClone(VALID_GRAPH) as KnowledgeGraph & {
+      enriched_at: string;
+      version: string;
+      index_v2: unknown;
+    };
+    enriched.enriched_at = '2026-04-13T10:00:00Z';
+    enriched.version = '1.0';
+    enriched.index_v2 = {
+      version: '2',
+      generated_at: '2026-04-13T10:01:00Z',
+      symbols: [
+        {
+          id: 'symbol-auth-index',
+          name: 'authIndex',
+          kind: 'module',
+          path: 'src/auth/index.ts',
+          module_id: 'MODULE-Missing',
+          feature_ids: ['FEAT-404'],
+        },
+      ],
+      references: [
+        {
+          from_symbol_id: 'symbol-auth-index',
+          to_symbol_id: 'symbol-missing',
+          type: 'calls',
+        },
+      ],
+      processes: [
+        {
+          id: 'process-auth-entry',
+          name: 'Auth Entry',
+          entry_points: ['../src/auth/index.ts'],
+          symbol_ids: ['symbol-missing'],
+          feature_ids: ['FEAT-404'],
+        },
+      ],
+      clusters: [
+        {
+          id: 'cluster-auth',
+          name: 'Authentication',
+          module_ids: ['MODULE-Missing'],
+          feature_ids: ['FEAT-404'],
+        },
+      ],
+    };
+
+    const result = validateEnrichedKnowledgeGraph(enriched as any);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('index_v2.symbols[0].module_id references unknown module id'))).toBe(true);
+    expect(result.errors.some(e => e.includes('index_v2.symbols[0].feature_ids[0] references unknown feature id'))).toBe(true);
+    expect(result.errors.some(e => e.includes('index_v2.references[0].to_symbol_id references unknown symbol id'))).toBe(true);
+    expect(result.errors.some(e => e.includes('index_v2.processes[0].entry_points[0] must be a relative repo path without traversal'))).toBe(true);
+    expect(result.errors.some(e => e.includes('index_v2.clusters[0].module_ids[0] references unknown module id'))).toBe(true);
+  });
+
+  it('rejects index_v2 when generated_at is older than enriched_at', () => {
+    const enriched = structuredClone(VALID_GRAPH) as KnowledgeGraph & {
+      enriched_at: string;
+      version: string;
+      index_v2: unknown;
+    };
+    enriched.enriched_at = '2026-04-13T10:00:00Z';
+    enriched.version = '1.0';
+    enriched.index_v2 = {
+      version: '2',
+      generated_at: '2026-04-13T09:59:00Z',
+    };
+
+    const result = validateEnrichedKnowledgeGraph(enriched as any);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('index_v2.generated_at must be greater than or equal to enriched_at'))).toBe(true);
+  });
+
+  it('accepts valid synthesis_pages array', () => {
+    const enriched = structuredClone(VALID_GRAPH) as KnowledgeGraph & {
+      enriched_at: string;
+      version: string;
+      synthesis_pages: unknown;
+    };
+    enriched.enriched_at = '2026-04-13T10:00:00Z';
+    enriched.version = '1.0';
+    enriched.synthesis_pages = [
+      {
+        id: 'SYN-001',
+        kind: 'open_questions',
+        title: 'Auth Questions',
+        question: 'How does auth work?',
+        query_hash: 'abc123',
+        identity_key: 'def456',
+        content_hash: 'ghi789',
+        content_markdown: 'Some content',
+        source_entity_ids: ['FEAT-001'],
+        source_page_targets: ['Overview.md'],
+        source_snapshot: {
+          enriched_at: '2026-04-13T10:00:00Z',
+          version: '1.0',
+        },
+        wiki: {
+          source_refs: [{ path: 'src/auth/index.ts' }],
+          last_verified: '2026-04-13T10:00:00Z',
+          page_target: 'Synthesis/auth-questions.md',
+        },
+      },
+    ];
+
+    const result = validateEnrichedKnowledgeGraph(enriched as any);
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('rejects synthesis page with invalid kind', () => {
+    const enriched = structuredClone(VALID_GRAPH) as KnowledgeGraph & {
+      enriched_at: string;
+      version: string;
+      synthesis_pages: unknown;
+    };
+    enriched.enriched_at = '2026-04-13T10:00:00Z';
+    enriched.version = '1.0';
+    enriched.synthesis_pages = [
+      {
+        id: 'SYN-001',
+        kind: 'invalid_kind' as any,
+        title: 'Auth Questions',
+        question: 'How does auth work?',
+        query_hash: 'abc123',
+        identity_key: 'def456',
+        content_hash: 'ghi789',
+        content_markdown: 'Some content',
+        source_entity_ids: ['FEAT-001'],
+        source_page_targets: ['Overview.md'],
+        source_snapshot: {
+          enriched_at: '2026-04-13T10:00:00Z',
+          version: '1.0',
+        },
+        wiki: {
+          source_refs: [{ path: 'src/auth/index.ts' }],
+          last_verified: '2026-04-13T10:00:00Z',
+          page_target: 'Synthesis/auth-questions.md',
+        },
+      },
+    ];
+
+    const result = validateEnrichedKnowledgeGraph(enriched as any);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('synthesis_pages[0].kind must be one of:'))).toBe(true);
+  });
+
+  it('rejects synthesis page with wiki.page_target not under Synthesis/', () => {
+    const enriched = structuredClone(VALID_GRAPH) as KnowledgeGraph & {
+      enriched_at: string;
+      version: string;
+      synthesis_pages: unknown;
+    };
+    enriched.enriched_at = '2026-04-13T10:00:00Z';
+    enriched.version = '1.0';
+    enriched.synthesis_pages = [
+      {
+        id: 'SYN-001',
+        kind: 'open_questions',
+        title: 'Auth Questions',
+        question: 'How does auth work?',
+        query_hash: 'abc123',
+        identity_key: 'def456',
+        content_hash: 'ghi789',
+        content_markdown: 'Some content',
+        source_entity_ids: ['FEAT-001'],
+        source_page_targets: ['Overview.md'],
+        source_snapshot: {
+          enriched_at: '2026-04-13T10:00:00Z',
+          version: '1.0',
+        },
+        wiki: {
+          source_refs: [{ path: 'src/auth/index.ts' }],
+          last_verified: '2026-04-13T10:00:00Z',
+          page_target: 'Features/auth-questions.md',
+        },
+      },
+    ];
+
+    const result = validateEnrichedKnowledgeGraph(enriched as any);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('must be under Synthesis/ directory'))).toBe(true);
+  });
+
+  it('rejects duplicate synthesis page identity_key', () => {
+    const enriched = structuredClone(VALID_GRAPH) as KnowledgeGraph & {
+      enriched_at: string;
+      version: string;
+      synthesis_pages: unknown;
+    };
+    enriched.enriched_at = '2026-04-13T10:00:00Z';
+    enriched.version = '1.0';
+    enriched.synthesis_pages = [
+      {
+        id: 'SYN-001',
+        kind: 'open_questions',
+        title: 'Auth Questions',
+        question: 'How does auth work?',
+        query_hash: 'abc123',
+        identity_key: 'same-key',
+        content_hash: 'ghi789',
+        content_markdown: 'Some content',
+        source_entity_ids: ['FEAT-001'],
+        source_page_targets: ['Overview.md'],
+        source_snapshot: {
+          enriched_at: '2026-04-13T10:00:00Z',
+          version: '1.0',
+        },
+        wiki: {
+          source_refs: [{ path: 'src/auth/index.ts' }],
+          last_verified: '2026-04-13T10:00:00Z',
+          page_target: 'Synthesis/auth-questions.md',
+        },
+      },
+      {
+        id: 'SYN-002',
+        kind: 'open_questions',
+        title: 'Auth Questions Duplicate',
+        question: 'How does auth work? (duplicate)',
+        query_hash: 'abc123-dup',
+        identity_key: 'same-key',
+        content_hash: 'ghi789-dup',
+        content_markdown: 'Some duplicate content',
+        source_entity_ids: ['FEAT-001'],
+        source_page_targets: ['Overview.md'],
+        source_snapshot: {
+          enriched_at: '2026-04-13T10:00:00Z',
+          version: '1.0',
+        },
+        wiki: {
+          source_refs: [{ path: 'src/auth/index.ts' }],
+          last_verified: '2026-04-13T10:00:00Z',
+          page_target: 'Synthesis/auth-questions-dup.md',
+        },
+      },
+    ];
+
+    const result = validateEnrichedKnowledgeGraph(enriched as any);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('duplicate synthesis page identity_key'))).toBe(true);
   });
 });
 

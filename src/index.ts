@@ -4,11 +4,19 @@
  * Programmatic API for orchestrating the kto pipeline via Claude Agent SDK.
  */
 
-export type { KnowledgeGraph, EnrichedKnowledgeGraph, RawKnowledge } from './types.js';
+export type {
+  KnowledgeGraph,
+  EnrichedKnowledgeGraph,
+  RawKnowledge,
+} from './types.js';
 export type { KtoConfig, KtoAgentsConfig, KtoProvider } from './config.js';
-export { loadConfig, CONFIG_DEFAULTS } from './config.js';
+export {
+  loadConfig,
+  CONFIG_DEFAULTS,
+} from './config.js';
 export {
   validateKnowledgeGraph,
+  validateEnrichedKnowledgeGraph,
   validateRawKnowledge,
   isValidEntityId,
 } from './knowledge-validator.js';
@@ -17,8 +25,8 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig, type KtoAgentsConfig, type KtoConfig } from './config.js';
-import { validateKnowledgeGraph } from './knowledge-validator.js';
-import type { KnowledgeGraph } from './types.js';
+import { validateEnrichedKnowledgeGraph, validateKnowledgeGraph, validateRawKnowledge } from './knowledge-validator.js';
+import type { EnrichedKnowledgeGraph, KnowledgeGraph, KnowledgeStalenessStatus, RawKnowledge } from './types.js';
 
 type AgentConfigKey = keyof KtoAgentsConfig;
 
@@ -51,6 +59,7 @@ function isInheritModel(model: string | undefined): boolean {
 
 interface ResolvedPaths {
   outputDir: string;
+  knowledgePath: string;
   enrichedKnowledgePath: string;
 }
 
@@ -79,6 +88,63 @@ export interface KtoQueryResult {
   writeback: boolean;
   targetPath?: string;
   error?: string;
+}
+
+export type KtoRecommendedAction = 'init' | 'analyze' | 'sync' | 'lint' | 'none';
+
+export interface KtoArtifactStatus {
+  path: string;
+  exists: boolean;
+  valid: boolean | null;
+  generatedAt?: string;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface KtoStatusResult {
+  success: boolean;
+  config: {
+    path: string;
+    exists: boolean;
+    valid: boolean;
+    errors: string[];
+  };
+  outputDir?: string;
+  knowledge: KtoArtifactStatus;
+  enrichedKnowledge: KtoArtifactStatus & {
+    counts?: {
+      features: number;
+      modules: number;
+      thirdParties: number;
+    };
+  };
+  freshness: {
+    enrichedFromKnowledge: KnowledgeStalenessStatus;
+    wikiFromEnriched: KnowledgeStalenessStatus;
+  };
+  recommendedAction: KtoRecommendedAction;
+  error?: string;
+}
+
+type InternalEnrichedArtifactStatus = KtoStatusResult['enrichedKnowledge'] & {
+  metaWikiFreshness?: KnowledgeStalenessStatus;
+};
+
+// ─── Token Tracking ──────────────────────────────────────────────────────────
+
+export interface AgentUsage {
+  inputTokens: number;
+  output_tokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  totalTokens: number;
+}
+
+export interface AgentRunMetrics {
+  agent: string;
+  model: string;
+  usage: AgentUsage;
+  durationMs: number;
 }
 
 /**
@@ -241,10 +307,77 @@ export class KtoRunner {
     };
   }
 
+  async status(): Promise<KtoStatusResult> {
+    const configPath = join(this.projectDir, '.kto', 'config.json');
+    const configStatus = await this.inspectConfig(configPath);
+
+    if (!configStatus.exists || !configStatus.valid || configStatus.config === undefined) {
+      return {
+        success: false,
+        config: {
+          path: configPath,
+          exists: configStatus.exists,
+          valid: configStatus.valid,
+          errors: configStatus.errors,
+        },
+        knowledge: {
+          path: join(this.projectDir, '.kto', 'knowledge.json'),
+          exists: false,
+          valid: null,
+          errors: [],
+          warnings: [],
+        },
+        enrichedKnowledge: {
+          path: join(this.projectDir, '.kto', 'enriched_knowledge.json'),
+          exists: false,
+          valid: null,
+          errors: [],
+          warnings: [],
+        },
+        freshness: {
+          enrichedFromKnowledge: 'unknown',
+          wikiFromEnriched: 'unknown',
+        },
+        recommendedAction: 'init',
+        error: configStatus.errors[0] ?? 'kto is not initialized. Run /kto:init first.',
+      };
+    }
+
+    const paths = this.resolvePaths(configStatus.config);
+    const knowledge = await this.inspectRawKnowledge(paths.knowledgePath);
+    const enrichedKnowledge = await this.inspectEnrichedKnowledge(paths.enrichedKnowledgePath);
+    const freshness = this.deriveFreshness(knowledge, enrichedKnowledge);
+    const recommendedAction = this.deriveRecommendedAction(configStatus.valid, knowledge, enrichedKnowledge, freshness.wikiFromEnriched);
+
+    return {
+      success: configStatus.valid && (enrichedKnowledge.valid ?? false),
+      config: {
+        path: configPath,
+        exists: configStatus.exists,
+        valid: configStatus.valid,
+        errors: configStatus.errors,
+      },
+      outputDir: configStatus.config.output_dir,
+      knowledge,
+      enrichedKnowledge: {
+        path: enrichedKnowledge.path,
+        exists: enrichedKnowledge.exists,
+        valid: enrichedKnowledge.valid,
+        errors: enrichedKnowledge.errors,
+        warnings: enrichedKnowledge.warnings,
+        ...(enrichedKnowledge.generatedAt === undefined ? {} : { generatedAt: enrichedKnowledge.generatedAt }),
+        ...(enrichedKnowledge.counts === undefined ? {} : { counts: enrichedKnowledge.counts }),
+      },
+      freshness,
+      recommendedAction,
+      ...(enrichedKnowledge.valid === false ? { error: enrichedKnowledge.errors[0] } : {}),
+    };
+  }
+
   private async runAgent(
     runContext: ResolvedAgentRunContext,
     opts: { task: string; cwd: string },
-  ): Promise<void> {
+  ): Promise<AgentRunMetrics> {
     const agentName = runContext.name;
     let agentDef: string;
     try {
@@ -252,6 +385,9 @@ export class KtoRunner {
     } catch {
       throw new Error(`Agent definition not found: ${agentName}.md`);
     }
+
+    const startTime = Date.now();
+    let totalUsage: AgentUsage | undefined;
 
     const stream = query({
       prompt: opts.task,
@@ -271,9 +407,72 @@ export class KtoRunner {
     });
 
     for await (const msg of stream) {
-      if (msg.type === 'result' && msg.subtype !== 'success') {
-        throw new Error(`Agent ${agentName} failed: ${JSON.stringify((msg as { errors: unknown }).errors)}`);
+      if (msg.type === 'result') {
+        if (msg.subtype !== 'success') {
+          throw new Error(`Agent ${agentName} failed: ${JSON.stringify((msg as { errors: unknown }).errors)}`);
+        }
+        // Capture usage from final result
+        const resultMsg = msg as unknown as {
+          usage?: {
+            input_tokens?: number;
+            output_tokens?: number;
+            cache_creation_input_tokens?: number;
+            cache_read_input_tokens?: number;
+          };
+          total_cost_usd?: number;
+        };
+        if (resultMsg.usage) {
+          totalUsage = {
+            inputTokens: resultMsg.usage.input_tokens ?? 0,
+            output_tokens: resultMsg.usage.output_tokens ?? 0,
+            cacheCreationInputTokens: resultMsg.usage.cache_creation_input_tokens ?? 0,
+            cacheReadInputTokens: resultMsg.usage.cache_read_input_tokens ?? 0,
+            totalTokens:
+              (resultMsg.usage.input_tokens ?? 0) +
+              (resultMsg.usage.output_tokens ?? 0),
+          };
+        }
       }
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    const metrics: AgentRunMetrics = {
+      agent: agentName,
+      model: runContext.model,
+      usage: totalUsage ?? {
+        inputTokens: 0,
+        output_tokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalTokens: 0,
+      },
+      durationMs,
+    };
+
+    this.logAgentMetrics(metrics);
+
+    return metrics;
+  }
+
+  private logAgentMetrics(metrics: AgentRunMetrics): void {
+    const u = metrics.usage;
+    const total = u.totalTokens.toLocaleString();
+
+    const lines = [
+      '',
+      `┌─ ${metrics.agent} (${metrics.model}) ─────────`,
+      `│ input: ${u.inputTokens.toLocaleString()} tokens`,
+      `│ output: ${u.output_tokens.toLocaleString()} tokens`,
+      `│ cache read: ${u.cacheReadInputTokens.toLocaleString()}`,
+      `│ cache create: ${u.cacheCreationInputTokens.toLocaleString()}`,
+      `│ total: ${total} tokens`,
+      `│ duration: ${metrics.durationMs}ms`,
+      `└─────────────────────────────`,
+    ];
+
+    for (const line of lines) {
+      process.stdout.write(line + '\n');
     }
   }
 
@@ -549,22 +748,23 @@ export class KtoRunner {
     const outputDir = join(this.projectDir, config.output_dir);
     return {
       outputDir,
+      knowledgePath: join(outputDir, 'knowledge.json'),
       enrichedKnowledgePath: join(outputDir, 'enriched_knowledge.json'),
     };
   }
 
-  private async loadEnrichedKnowledgeGraph(config: KtoConfig): Promise<{ path: string; graph: KnowledgeGraph }> {
+  private async loadEnrichedKnowledgeGraph(config: KtoConfig): Promise<{ path: string; graph: EnrichedKnowledgeGraph }> {
     const paths = this.resolvePaths(config);
     const raw = await readFile(paths.enrichedKnowledgePath, 'utf-8');
     return {
       path: paths.enrichedKnowledgePath,
-      graph: JSON.parse(raw) as KnowledgeGraph,
+      graph: JSON.parse(raw) as EnrichedKnowledgeGraph,
     };
   }
 
   private async assertEnrichedKnowledgeGraphValid(config: KtoConfig): Promise<void> {
     const { path, graph } = await this.loadEnrichedKnowledgeGraph(config);
-    const validation = validateKnowledgeGraph(graph);
+    const validation = validateEnrichedKnowledgeGraph(graph);
 
     if (!validation.valid) {
       throw new Error(`Invalid enriched knowledge graph at ${path}: ${validation.errors.join('; ')}`);
@@ -575,7 +775,7 @@ export class KtoRunner {
     try {
       const { path, graph } = await this.loadEnrichedKnowledgeGraph(config);
 
-      const validation = validateKnowledgeGraph(graph);
+      const validation = validateEnrichedKnowledgeGraph(graph);
       if (!validation.valid) {
         return {
           success: false,
@@ -617,5 +817,120 @@ export class KtoRunner {
         error: `Failed to build pipeline result from ${paths.enrichedKnowledgePath}: ${msg}`,
       };
     }
+  }
+
+  private async inspectConfig(configPath: string): Promise<{
+    exists: boolean;
+    valid: boolean;
+    config?: KtoConfig;
+    errors: string[];
+  }> {
+    try {
+      await readFile(configPath, 'utf-8');
+    } catch {
+      return { exists: false, valid: false, errors: ['.kto/config.json not found'] };
+    }
+
+    try {
+      const config = await loadConfig(this.projectDir, { requireVault: false });
+      return { exists: true, valid: true, config, errors: [] };
+    } catch (err) {
+      return {
+        exists: true,
+        valid: false,
+        errors: [err instanceof Error ? err.message : String(err)],
+      };
+    }
+  }
+
+  private async inspectRawKnowledge(path: string): Promise<KtoArtifactStatus> {
+    try {
+      const raw = JSON.parse(await readFile(path, 'utf-8')) as RawKnowledge;
+      const validation = validateRawKnowledge(raw);
+      return {
+        path,
+        exists: true,
+        valid: validation.valid,
+        generatedAt: raw.scanned_at,
+        errors: validation.errors,
+        warnings: validation.warnings,
+      };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { path, exists: false, valid: null, errors: [], warnings: [] };
+      }
+      return {
+        path,
+        exists: true,
+        valid: false,
+        errors: [err instanceof Error ? err.message : String(err)],
+        warnings: [],
+      };
+    }
+  }
+
+  private async inspectEnrichedKnowledge(path: string): Promise<InternalEnrichedArtifactStatus> {
+    try {
+      const graph = JSON.parse(await readFile(path, 'utf-8')) as EnrichedKnowledgeGraph;
+      const validation = validateEnrichedKnowledgeGraph(graph);
+      return {
+        path,
+        exists: true,
+        valid: validation.valid,
+        generatedAt: graph.enriched_at,
+        errors: validation.errors,
+        warnings: validation.warnings,
+        ...(graph.meta?.staleness?.wiki_from_enriched?.status === undefined
+          ? {}
+          : { metaWikiFreshness: graph.meta.staleness.wiki_from_enriched.status }),
+        ...(Array.isArray(graph.features) && Array.isArray(graph.modules) && Array.isArray(graph.third_parties)
+          ? {
+              counts: {
+                features: graph.features.length,
+                modules: graph.modules.length,
+                thirdParties: graph.third_parties.length,
+              },
+            }
+          : {}),
+      };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { path, exists: false, valid: null, errors: [], warnings: [] };
+      }
+      return {
+        path,
+        exists: true,
+        valid: false,
+        errors: [err instanceof Error ? err.message : String(err)],
+        warnings: [],
+      };
+    }
+  }
+
+  private deriveFreshness(
+    knowledge: KtoArtifactStatus,
+    enriched: InternalEnrichedArtifactStatus,
+  ): KtoStatusResult['freshness'] {
+    let enrichedFromKnowledge: KnowledgeStalenessStatus = 'unknown';
+    if (knowledge.generatedAt !== undefined && enriched.generatedAt !== undefined) {
+      enrichedFromKnowledge = Date.parse(enriched.generatedAt) >= Date.parse(knowledge.generatedAt) ? 'fresh' : 'stale';
+    }
+
+    const wikiFromEnriched = enriched.metaWikiFreshness ?? 'unknown';
+
+    return { enrichedFromKnowledge, wikiFromEnriched };
+  }
+
+  private deriveRecommendedAction(
+    configValid: boolean,
+    knowledge: KtoArtifactStatus,
+    enriched: KtoStatusResult['enrichedKnowledge'],
+    wikiFromEnriched: KnowledgeStalenessStatus,
+  ): KtoRecommendedAction {
+    if (!configValid) return 'init';
+    if (!enriched.exists || enriched.valid !== true) return 'analyze';
+    if (wikiFromEnriched === 'stale') return 'sync';
+    if (knowledge.valid === false || enriched.warnings.length > 0) return 'lint';
+    return 'none';
   }
 }

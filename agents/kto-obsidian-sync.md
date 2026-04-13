@@ -30,18 +30,21 @@ All files are written under `{vault_path}/{obsidian_subfolder}/`:
 ├── Facts.md
 ├── Technology.md
 ├── Features/
-│   ├── Features_Index.md
-│   ├── FEAT-001_Auth.md
-│   └── FEAT-002_Billing.md
+│ ├── Features_Index.md
+│ ├── FEAT-001_Auth.md
+│ └── FEAT-002_Billing.md
 ├── Code_Map/
-│   ├── Modules_Index.md
-│   ├── MODULE-AuthService.md
-│   └── MODULE-BillingService.md
+│ ├── Modules_Index.md
+│ ├── MODULE-AuthService.md
+│ └── MODULE-BillingService.md
 ├── Third_Party/
-│   ├── THIRD-Stripe.md
-│   └── THIRD-Auth0.md
-└── Security/
-    └── Security_Overview.md
+│ ├── THIRD-Stripe.md
+│ └── THIRD-Auth0.md
+├── Security/
+│ └── Security_Overview.md
+└── Synthesis/
+    ├── Synthesis_Index.md
+    └── comparison__auth-providers.md
 ```
 </vault_structure>
 
@@ -101,6 +104,7 @@ mkdir -p "{vault_path}/{obsidian_subfolder}/Features"
 mkdir -p "{vault_path}/{obsidian_subfolder}/Code_Map"
 mkdir -p "{vault_path}/{obsidian_subfolder}/Third_Party"
 mkdir -p "{vault_path}/{obsidian_subfolder}/Security"
+mkdir -p "{vault_path}/{obsidian_subfolder}/Synthesis"
 ```
 </step>
 
@@ -214,6 +218,7 @@ Use these deterministic templates inside AUTO-GENERATED blocks:
 - [[Features/Features_Index]]
 - [[Code_Map/Modules_Index]]
 - [[Security/Security_Overview]]
+- [[Synthesis/Synthesis_Index]]
 
 *Last synced: {enriched_at}*
 <!-- AUTO-GENERATED END -->
@@ -448,6 +453,57 @@ Source: {tp.wiki.source_refs.map(ref => ref.path).join(', ')} | Verified: {tp.wi
 ```
 </step>
 
+<step name="write_synthesis_page">
+Write a single synthesis page `Synthesis/{kind}__{slug}.md` when explicitly triggered by query writeback.
+
+This step is ONLY called when a query writeback is enabled. Do NOT call this during regular sync.
+
+Input:
+- `page`: `KnowledgeSynthesisPage` from `enriched_knowledge.json.synthesis_pages[]`
+
+Template:
+```markdown
+---
+type: synthesis
+kind: {page.kind}
+id: {page.id}
+project: {page.source_snapshot.enriched_at}
+generated_by: kto
+query_hash: {page.query_hash}
+identity_key: {page.identity_key}
+content_hash: {page.content_hash}
+source_snapshot_enriched_at: {page.source_snapshot.enriched_at}
+---
+
+# {page.title}
+
+<!-- AUTO-GENERATED START -->
+## Question
+{page.question}
+
+## Answer
+{page.content_markdown}
+
+## Provenance
+- Entities: {page.source_entity_ids.join(', ')}
+- Pages: {page.source_page_targets.join(', ')}
+- Source Refs: {page.wiki.source_refs.map(ref => ref.path).join(', ')}
+- Source Snapshot: {page.source_snapshot.enriched_at}
+
+## Writeback Metadata
+- Query Hash: `{page.query_hash}`
+- Identity Key: `{page.identity_key}`
+- Content Hash: `{page.content_hash}`
+- Last Verified: {page.wiki.last_verified}
+<!-- AUTO-GENERATED END -->
+```
+
+This template ensures:
+- Stable identity via `identity_key`
+- Idempotent updates via `content_hash`
+- Audit trail via `source_snapshot.enriched_at`
+</step>
+
 <step name="write_index_files">
 Write `Features/Features_Index.md` and `Code_Map/Modules_Index.md`:
 
@@ -482,6 +538,35 @@ Modules Index:
 *{high_signal_modules.length} high-signal modules · {low_signal_modules.length} low-signal modules · Last synced: {enriched_at}*
 <!-- AUTO-GENERATED END -->
 ```
+</step>
+
+<step name="write_synthesis_index">
+Write `Synthesis/Synthesis_Index.md` — central index of all synthesis pages:
+
+```markdown
+---
+type: synthesis_index
+project: {project.id}
+generated_by: kto
+---
+
+# Synthesis Index — {project.name}
+
+<!-- AUTO-GENERATED START -->
+{if synthesis_pages and synthesis_pages.length > 0:
+| Kind | Title | Page | Source Snapshot | Last Verified |
+|------|-------|------|-----------------|---------------|
+{for each page in synthesis_pages sorted by kind,title: | {page.kind} | {page.title} | [[{page.wiki.page_target}|{page.title}]] | {page.source_snapshot.enriched_at} | {page.wiki.last_verified} |}
+}
+{else:
+_No synthesis pages recorded yet. Run `/kto:query` with writeback enabled to create synthesis pages._
+}
+
+*Last synced: {enriched_at}*
+<!-- AUTO-GENERATED END -->
+```
+
+If `synthesis_pages` is undefined or empty, write the index with the "no pages" message.
 </step>
 
 <step name="write_security_overview">
@@ -572,6 +657,7 @@ Source: {security.threats.flatMap(t => t.source_refs.map(ref => ref.path)).join(
 - Do not regenerate synthesis-heavy sections (e.g., architecture narrative) when the source inputs are unchanged
 - If vault_path is empty, STOP and return error: "vault_path not configured. Run /kto:init"
 - All generated markdown text must be English-only, regardless of user language
+- Synthesis pages (`Synthesis/*.md`) are ONLY written via explicit query writeback, NOT during regular sync
 </rules>
 
 <success_criteria>
@@ -583,6 +669,7 @@ Source: {security.threats.flatMap(t => t.source_refs.map(ref => ref.path)).join(
 - [ ] One file per module
 - [ ] Index files written
 - [ ] Security_Overview.md written with Authentication Flow, Authorization Model, Threat Details, PII Inventory sections
+- [ ] Synthesis/Synthesis_Index.md written/updated
 - [ ] No user content outside AUTO-GENERATED blocks was modified
 - [ ] Return: files created, files updated, vault path
 </success_criteria>
